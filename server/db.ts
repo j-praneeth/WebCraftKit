@@ -21,8 +21,10 @@ const resumeSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   title: { type: String, required: true },
   content: { type: Object, required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  atsScore: { type: Number },
+  lastUpdated: { type: Date, default: Date.now },
+  isOptimized: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
 });
 
 const coverLetterSchema = new mongoose.Schema({

@@ -15,7 +15,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     await connectDB();
     console.log("Successfully connected to MongoDB");
   } catch (error) {
-    console.error("Error connecting to MongoDB:", error instanceof Error ? error.message : "An unknown error occurred");
+    console.error("Error connecting to MongoDB:", error instanceof Error ? error.message : error);
     // Fall back to in-memory storage
     console.log("Falling back to in-memory storage");
   }
@@ -170,7 +170,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const resume = await storage.createResume(resumeData);
       res.status(201).json(resume);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -191,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedResume = await storage.updateResume(resumeId, req.body);
       res.json(updatedResume);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -212,7 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteResume(resumeId);
       res.json({ message: "Resume deleted successfully" });
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -250,7 +250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const letter = await storage.createCoverLetter(letterData);
       res.status(201).json(letter);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -271,7 +271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedLetter = await storage.updateCoverLetter(letterId, req.body);
       res.json(updatedLetter);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -292,7 +292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteCoverLetter(letterId);
       res.json({ message: "Cover letter deleted successfully" });
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 
@@ -314,7 +314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const question = await storage.createInterviewQuestion(questionData);
       res.status(201).json(question);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({ message: error.message });
     }
   });
 

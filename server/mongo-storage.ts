@@ -453,3 +453,6 @@ export class MongoStorage implements IStorage {
     };
   }
 }
+
+// Export a singleton instance of the MongoDB storage implementation
+export const storage = new MongoStorage();
