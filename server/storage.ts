@@ -48,6 +48,10 @@ export interface IStorage {
   // Organization methods
   getOrganization(id: number): Promise<Organization | undefined>;
   createOrganization(organization: InsertOrganization): Promise<Organization>;
+  
+  // Pricing Plan methods (optional)
+  getPricingPlans?(): Promise<any[]>;
+  getPricingPlanByName?(name: string): Promise<any | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -504,4 +508,19 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+import { MongoStorage } from './mongo-storage';
+
+// Main storage variable - can switch between MemStorage and MongoStorage
+let storageImplementation: IStorage;
+
+// Try to use MongoDB, but fall back to in-memory storage if it fails
+try {
+  storageImplementation = new MongoStorage();
+  console.log('Using MongoDB storage');
+} catch (error) {
+  console.warn('Error initializing MongoDB storage, falling back to in-memory storage:', error);
+  storageImplementation = new MemStorage();
+  console.log('Using in-memory storage');
+}
+
+export const storage = storageImplementation;
