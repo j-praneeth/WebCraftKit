@@ -500,6 +500,8 @@ export class MongoStorage implements IStorage {
       title: interview.title,
       score: interview.score,
       feedback: interview.feedback,
+      transcript: interview.transcript || null,
+      videoUrl: interview.videoUrl || null,
       date: interview.date || interview.createdAt
     };
   }

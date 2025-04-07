@@ -325,6 +325,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(interviews);
   });
   
+  app.post("/api/mock-interviews", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const user = await storage.getUser(userId);
+      
+      // For free plan users, check if they've reached their limit (3 mock interviews)
+      if (user?.plan === 'free') {
+        const currentCount = user.mockInterviewsCount || 0;
+        
+        if (currentCount >= 3) {
+          return res.status(403).json({ 
+            message: "Free plan limited to 3 mock interviews. Please upgrade to continue.",
+            currentCount,
+            limit: 3,
+            canUpgrade: true
+          });
+        }
+      }
+      
+      // Create the mock interview
+      const interviewData = {
+        ...req.body,
+        userId
+      };
+      
+      const interview = await storage.createMockInterview(interviewData);
+      
+      // Update the user's interview count
+      const newCount = await storage.updateMockInterviewCount(userId);
+      
+      res.status(201).json({
+        interview,
+        mockInterviewsCount: newCount,
+        limit: user?.plan === 'free' ? 3 : null
+      });
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+    }
+  });
+  
   // Resume Template routes
   app.get("/api/resume-templates", async (req, res) => {
     try {

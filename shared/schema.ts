@@ -111,6 +111,8 @@ export const mockInterviews = pgTable("mock_interviews", {
   title: text("title").notNull(),
   score: integer("score"),
   feedback: jsonb("feedback"),
+  transcript: text("transcript"),
+  videoUrl: text("video_url"),
   date: timestamp("date").defaultNow().notNull(),
 });
 
@@ -119,6 +121,8 @@ export const insertMockInterviewSchema = createInsertSchema(mockInterviews).pick
   title: true,
   score: true,
   feedback: true,
+  transcript: true,
+  videoUrl: true,
 });
 
 // Job Posting table

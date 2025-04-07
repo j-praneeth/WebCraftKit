@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'user' },
   plan: { type: String, default: 'free' },
   profilePicture: { type: String },
+  mockInterviewsCount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
@@ -53,6 +54,7 @@ const mockInterviewSchema = new mongoose.Schema({
   feedback: { type: Object },
   score: { type: Number },
   videoUrl: { type: String },
+  date: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -103,6 +105,7 @@ export const MockInterview = mongoose.model('MockInterview', mockInterviewSchema
 export const JobPosting = mongoose.model('JobPosting', jobPostingSchema);
 export const Organization = mongoose.model('Organization', organizationSchema);
 export const PricingPlan = mongoose.model('PricingPlan', pricingPlanSchema);
+export const ResumeTemplate = mongoose.model('ResumeTemplate', resumeTemplateSchema);
 
 // Initialize pricing plans
 async function initializePricingPlans() {
@@ -119,7 +122,8 @@ async function initializePricingPlans() {
             '1 Resume',
             '1 Cover Letter',
             'Basic Job Matching',
-            'Limited Interview Questions'
+            'Limited Interview Questions',
+            'Up to 3 Mock Interviews'
           ],
           description: 'Get started with essential tools for your job search',
           recommended: false
@@ -134,7 +138,8 @@ async function initializePricingPlans() {
             'Advanced Job Matching',
             'Unlimited Interview Questions',
             'Resume Analytics',
-            'AI Optimization'
+            'AI Optimization',
+            'Premium Resume Templates'
           ],
           description: 'Everything you need for a successful job search',
           recommended: true
@@ -145,7 +150,7 @@ async function initializePricingPlans() {
           interval: 'monthly',
           features: [
             'All Professional Features',
-            'Mock Interviews with AI Feedback',
+            'Unlimited Mock Interviews with AI Feedback',
             'Priority Support',
             'Custom Resume Templates',
             'Team Management',
@@ -163,6 +168,117 @@ async function initializePricingPlans() {
   }
 }
 
+// Initialize resume templates
+async function initializeResumeTemplates() {
+  try {
+    const count = await ResumeTemplate.countDocuments();
+    
+    if (count === 0) {
+      await ResumeTemplate.insertMany([
+        {
+          name: 'Professional',
+          description: 'A clean and professional template suitable for most industries',
+          structure: {
+            sections: [
+              { id: 'personal', title: 'Personal Information', required: true },
+              { id: 'summary', title: 'Professional Summary', required: true },
+              { id: 'experience', title: 'Work Experience', required: true },
+              { id: 'education', title: 'Education', required: true },
+              { id: 'skills', title: 'Skills', required: true },
+              { id: 'certifications', title: 'Certifications', required: false },
+              { id: 'languages', title: 'Languages', required: false }
+            ],
+            layout: 'standard'
+          },
+          category: 'free',
+          previewImage: '/templates/professional.png'
+        },
+        {
+          name: 'Modern',
+          description: 'A contemporary design with a clean layout and subtle styling',
+          structure: {
+            sections: [
+              { id: 'personal', title: 'Personal Information', required: true },
+              { id: 'summary', title: 'Profile', required: true },
+              { id: 'experience', title: 'Work Experience', required: true },
+              { id: 'education', title: 'Education', required: true },
+              { id: 'skills', title: 'Skills & Expertise', required: true },
+              { id: 'projects', title: 'Projects', required: false },
+              { id: 'certifications', title: 'Certifications', required: false },
+              { id: 'interests', title: 'Interests', required: false }
+            ],
+            layout: 'modern'
+          },
+          category: 'free',
+          previewImage: '/templates/modern.png'
+        },
+        {
+          name: 'Executive',
+          description: 'An elegant template designed for senior professionals and executives',
+          structure: {
+            sections: [
+              { id: 'personal', title: 'Personal Information', required: true },
+              { id: 'summary', title: 'Executive Summary', required: true },
+              { id: 'experience', title: 'Professional Experience', required: true },
+              { id: 'achievements', title: 'Key Achievements', required: true },
+              { id: 'education', title: 'Education', required: true },
+              { id: 'skills', title: 'Core Competencies', required: true },
+              { id: 'leadership', title: 'Leadership', required: false },
+              { id: 'certifications', title: 'Certifications', required: false },
+              { id: 'publications', title: 'Publications', required: false }
+            ],
+            layout: 'executive'
+          },
+          category: 'premium',
+          previewImage: '/templates/executive.png'
+        },
+        {
+          name: 'Creative',
+          description: 'A visually striking template for creative professionals',
+          structure: {
+            sections: [
+              { id: 'personal', title: 'Personal Information', required: true },
+              { id: 'summary', title: 'About Me', required: true },
+              { id: 'experience', title: 'Experience', required: true },
+              { id: 'education', title: 'Education', required: true },
+              { id: 'skills', title: 'Skills', required: true },
+              { id: 'portfolio', title: 'Portfolio', required: false },
+              { id: 'awards', title: 'Awards', required: false },
+              { id: 'interests', title: 'Interests', required: false }
+            ],
+            layout: 'creative'
+          },
+          category: 'premium',
+          previewImage: '/templates/creative.png'
+        },
+        {
+          name: 'Technical',
+          description: 'Specifically designed for IT professionals, developers, and engineers',
+          structure: {
+            sections: [
+              { id: 'personal', title: 'Personal Information', required: true },
+              { id: 'summary', title: 'Technical Profile', required: true },
+              { id: 'experience', title: 'Professional Experience', required: true },
+              { id: 'education', title: 'Education', required: true },
+              { id: 'skills', title: 'Technical Skills', required: true },
+              { id: 'projects', title: 'Projects', required: true },
+              { id: 'certifications', title: 'Certifications', required: false },
+              { id: 'publications', title: 'Publications', required: false }
+            ],
+            layout: 'technical'
+          },
+          category: 'premium',
+          previewImage: '/templates/technical.png'
+        }
+      ]);
+      
+      log('Resume templates initialized', 'db');
+    }
+  } catch (error) {
+    console.error('Error initializing resume templates:', error);
+  }
+}
+
 // Connect to MongoDB
 export async function connectDB() {
   try {
@@ -172,8 +288,9 @@ export async function connectDB() {
     
     log('Connected to MongoDB', 'db');
     
-    // Initialize pricing plans
+    // Initialize pricing plans and resume templates
     await initializePricingPlans();
+    await initializeResumeTemplates();
     
     return true;
   } catch (error) {
@@ -203,5 +320,6 @@ export default {
   MockInterview,
   JobPosting,
   Organization,
-  PricingPlan
+  PricingPlan,
+  ResumeTemplate
 };
