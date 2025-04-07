@@ -1,6 +1,7 @@
 import { 
   User, InsertUser, 
-  Resume, InsertResume, 
+  Resume, InsertResume,
+  ResumeTemplate, InsertResumeTemplate,
   CoverLetter, InsertCoverLetter,
   InterviewQuestion, InsertInterviewQuestion,
   MockInterview, InsertMockInterview,
@@ -15,6 +16,12 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
+  updateMockInterviewCount(userId: number): Promise<number>;
+  
+  // Resume Template methods
+  getResumeTemplate(id: number): Promise<ResumeTemplate | undefined>;
+  getResumeTemplates(category?: string): Promise<ResumeTemplate[]>;
+  createResumeTemplate(template: InsertResumeTemplate): Promise<ResumeTemplate>;
   
   // Resume methods
   getResume(id: number): Promise<Resume | undefined>;
@@ -56,6 +63,7 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
+  private resumeTemplates: Map<number, ResumeTemplate>;
   private resumes: Map<number, Resume>;
   private coverLetters: Map<number, CoverLetter>;
   private interviewQuestions: Map<number, InterviewQuestion>;
@@ -64,6 +72,7 @@ export class MemStorage implements IStorage {
   private organizations: Map<number, Organization>;
   
   private userId: number;
+  private templateId: number;
   private resumeId: number;
   private coverLetterId: number;
   private questionId: number;
@@ -73,6 +82,7 @@ export class MemStorage implements IStorage {
 
   constructor() {
     this.users = new Map();
+    this.resumeTemplates = new Map();
     this.resumes = new Map();
     this.coverLetters = new Map();
     this.interviewQuestions = new Map();
@@ -81,6 +91,7 @@ export class MemStorage implements IStorage {
     this.organizations = new Map();
     
     this.userId = 1;
+    this.templateId = 1;
     this.resumeId = 1;
     this.coverLetterId = 1;
     this.questionId = 1;
@@ -122,7 +133,8 @@ export class MemStorage implements IStorage {
       lastName: insertUser.lastName ?? null,
       role: insertUser.role || 'user', 
       plan: insertUser.plan || 'free',
-      profilePicture: insertUser.profilePicture ?? null
+      profilePicture: insertUser.profilePicture ?? null,
+      mockInterviewsCount: 0
     };
     
     this.users.set(id, user);
@@ -136,6 +148,48 @@ export class MemStorage implements IStorage {
     const updatedUser = { ...user, ...data };
     this.users.set(id, updatedUser);
     return updatedUser;
+  }
+  
+  async updateMockInterviewCount(userId: number): Promise<number> {
+    const user = await this.getUser(userId);
+    if (!user) throw new Error("User not found");
+    
+    // Increment the count
+    const currentCount = user.mockInterviewsCount || 0;
+    const newCount = currentCount + 1;
+    
+    // Update the user
+    await this.updateUser(userId, { mockInterviewsCount: newCount });
+    
+    return newCount;
+  }
+  
+  // Resume Template methods
+  async getResumeTemplate(id: number): Promise<ResumeTemplate | undefined> {
+    return this.resumeTemplates.get(id);
+  }
+  
+  async getResumeTemplates(category?: string): Promise<ResumeTemplate[]> {
+    const templates = Array.from(this.resumeTemplates.values());
+    if (category) {
+      return templates.filter(template => template.category === category);
+    }
+    return templates;
+  }
+  
+  async createResumeTemplate(insertTemplate: InsertResumeTemplate): Promise<ResumeTemplate> {
+    const id = this.templateId++;
+    const createdAt = new Date();
+    
+    const template: ResumeTemplate = {
+      ...insertTemplate,
+      id,
+      createdAt,
+      previewImage: insertTemplate.previewImage ?? null
+    };
+    
+    this.resumeTemplates.set(id, template);
+    return template;
   }
   
   // Resume methods
@@ -157,6 +211,7 @@ export class MemStorage implements IStorage {
       ...insertResume, 
       id, 
       lastUpdated,
+      templateId: insertResume.templateId ?? null,
       atsScore: insertResume.atsScore ?? null,
       isOptimized: insertResume.isOptimized ?? null 
     };
@@ -336,9 +391,86 @@ export class MemStorage implements IStorage {
       role: 'user',
       plan: 'free',
       createdAt: new Date(),
-      profilePicture: null
+      profilePicture: null,
+      mockInterviewsCount: 0
     };
     this.users.set(demoUser.id, demoUser);
+    
+    // Create resume templates
+    const templates = [
+      {
+        id: this.templateId++,
+        name: 'Modern Professional',
+        description: 'A clean, professional template with a sidebar for contact and skills',
+        structure: {
+          layout: 'sidebar-left',
+          fontFamily: 'Inter, sans-serif',
+          primaryColor: '#3b82f6',
+          fontSize: 'medium'
+        },
+        category: 'free',
+        previewImage: '/templates/modern-professional.png',
+        createdAt: new Date()
+      },
+      {
+        id: this.templateId++,
+        name: 'Executive Suite',
+        description: 'Elegant and sophisticated design for senior positions',
+        structure: {
+          layout: 'traditional',
+          fontFamily: 'Georgia, serif',
+          primaryColor: '#1e3a8a',
+          fontSize: 'medium'
+        },
+        category: 'free',
+        previewImage: '/templates/executive-suite.png',
+        createdAt: new Date()
+      },
+      {
+        id: this.templateId++,
+        name: 'Creative Portfolio',
+        description: 'Stand out with this modern creative template for design professionals',
+        structure: {
+          layout: 'grid',
+          fontFamily: 'Poppins, sans-serif',
+          primaryColor: '#8b5cf6',
+          fontSize: 'medium'
+        },
+        category: 'premium',
+        previewImage: '/templates/creative-portfolio.png',
+        createdAt: new Date()
+      },
+      {
+        id: this.templateId++,
+        name: 'ATS Maximizer',
+        description: 'Optimized for Applicant Tracking Systems with perfect keyword placement',
+        structure: {
+          layout: 'traditional',
+          fontFamily: 'Arial, sans-serif',
+          primaryColor: '#10b981',
+          fontSize: 'medium'
+        },
+        category: 'premium',
+        previewImage: '/templates/ats-maximizer.png',
+        createdAt: new Date()
+      },
+      {
+        id: this.templateId++,
+        name: 'Tech Innovator',
+        description: 'Modern template with skill bars and tech focus',
+        structure: {
+          layout: 'full-width',
+          fontFamily: 'Roboto Mono, monospace',
+          primaryColor: '#6366f1',
+          fontSize: 'medium'
+        },
+        category: 'premium',
+        previewImage: '/templates/tech-innovator.png',
+        createdAt: new Date()
+      }
+    ];
+    
+    templates.forEach(template => this.resumeTemplates.set(template.id, template));
     
     // Create some demo resumes
     const seniorDevResume: Resume = {
@@ -370,6 +502,7 @@ export class MemStorage implements IStorage {
         ],
         skills: ['React', 'Node.js', 'TypeScript', 'AWS', 'Docker']
       },
+      templateId: 1, // Modern Professional template
       atsScore: 92,
       lastUpdated: new Date(),
       isOptimized: true
@@ -410,6 +543,7 @@ export class MemStorage implements IStorage {
         ],
         skills: ['Project Management', 'Agile', 'Scrum', 'Budgeting', 'Team Leadership']
       },
+      templateId: 2, // Executive Suite template
       atsScore: 68,
       lastUpdated: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 1 week ago
       isOptimized: false

@@ -13,7 +13,8 @@ export const users = pgTable("users", {
   role: text("role").default("user").notNull(), // user, organization_admin, creator_admin
   createdAt: timestamp("created_at").defaultNow().notNull(),
   profilePicture: text("profile_picture"),
-  plan: text("plan").default("free").notNull(), // free, premium, business
+  plan: text("plan").default("free").notNull(), // free, professional, enterprise
+  mockInterviewsCount: integer("mock_interviews_count").default(0), // Track usage for free tier limits
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -27,12 +28,32 @@ export const insertUserSchema = createInsertSchema(users).pick({
   plan: true,
 });
 
+// Resume Templates table
+export const resumeTemplates = pgTable("resume_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  structure: jsonb("structure").notNull(), // Layout and styling information
+  category: text("category").notNull(), // 'free' or 'premium'
+  previewImage: text("preview_image"), // URL to template preview image
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertResumeTemplateSchema = createInsertSchema(resumeTemplates).pick({
+  name: true,
+  description: true,
+  structure: true,
+  category: true,
+  previewImage: true,
+});
+
 // Resume table
 export const resumes = pgTable("resumes", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
   title: text("title").notNull(),
   content: jsonb("content").notNull(),
+  templateId: integer("template_id"),
   atsScore: integer("ats_score"),
   lastUpdated: timestamp("last_updated").defaultNow().notNull(),
   isOptimized: boolean("is_optimized").default(false),
@@ -42,6 +63,7 @@ export const insertResumeSchema = createInsertSchema(resumes).pick({
   userId: true,
   title: true,
   content: true,
+  templateId: true,
   atsScore: true,
   isOptimized: true,
 });
@@ -144,6 +166,9 @@ export const insertOrganizationSchema = createInsertSchema(organizations).pick({
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export type InsertResumeTemplate = z.infer<typeof insertResumeTemplateSchema>;
+export type ResumeTemplate = typeof resumeTemplates.$inferSelect;
 
 export type InsertResume = z.infer<typeof insertResumeSchema>;
 export type Resume = typeof resumes.$inferSelect;

@@ -1,8 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./mongo-storage";
+import { storage } from "./storage";
 import { connectDB } from "./db";
-import { insertUserSchema, insertResumeSchema, insertCoverLetterSchema, insertInterviewQuestionSchema } from "@shared/schema";
+import { insertUserSchema, insertResumeSchema, insertCoverLetterSchema, insertInterviewQuestionSchema, insertResumeTemplateSchema } from "@shared/schema";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
@@ -323,6 +323,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const userId = (req.user as any).id;
     const interviews = await storage.getMockInterviewsByUserId(userId);
     res.json(interviews);
+  });
+  
+  // Resume Template routes
+  app.get("/api/resume-templates", async (req, res) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const templates = await storage.getResumeTemplates(category);
+      
+      // Filter templates based on user's plan
+      // Free users should only see free templates, premium users see all
+      const userPlan = req.isAuthenticated() ? (req.user as any).plan : 'free';
+      
+      const filteredTemplates = userPlan === 'premium' 
+        ? templates 
+        : templates.filter(template => template.category === 'free');
+      
+      res.json(filteredTemplates);
+    } catch (error) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+    }
+  });
+  
+  app.get("/api/resume-templates/:id", async (req, res) => {
+    try {
+      const templateId = parseInt(req.params.id);
+      const template = await storage.getResumeTemplate(templateId);
+      
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      
+      // Check if user has access to this template category
+      if (template.category === 'premium' && (!req.isAuthenticated() || (req.user as any).plan !== 'premium')) {
+        return res.status(403).json({ message: "Premium plan required for this template" });
+      }
+      
+      res.json(template);
+    } catch (error) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+    }
+  });
+  
+  // Admin-only route to create new templates
+  app.post("/api/resume-templates", isAuthenticated, async (req, res) => {
+    try {
+      // Check if user is admin
+      if ((req.user as any).role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      
+      const templateData = insertResumeTemplateSchema.parse(req.body);
+      const template = await storage.createResumeTemplate(templateData);
+      res.status(201).json(template);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+    }
   });
 
   // Job posting routes

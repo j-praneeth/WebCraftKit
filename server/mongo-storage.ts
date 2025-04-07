@@ -6,7 +6,8 @@ import {
   MockInterview as MockInterviewModel,
   JobPosting as JobPostingModel,
   Organization as OrganizationModel,
-  PricingPlan as PricingPlanModel
+  PricingPlan as PricingPlanModel,
+  ResumeTemplate as ResumeTemplateModel
 } from './db';
 
 import { 
@@ -17,13 +18,15 @@ import {
   MockInterview, 
   JobPosting, 
   Organization, 
+  ResumeTemplate,
   InsertUser, 
   InsertResume, 
   InsertCoverLetter, 
   InsertInterviewQuestion, 
   InsertMockInterview, 
   InsertJobPosting, 
-  InsertOrganization 
+  InsertOrganization,
+  InsertResumeTemplate
 } from '../shared/schema';
 
 import { IStorage } from './storage';
@@ -87,6 +90,66 @@ export class MongoStorage implements IStorage {
     } catch (error) {
       console.error('Error updating user:', error);
       return undefined;
+    }
+  }
+  
+  async updateMockInterviewCount(userId: number): Promise<number> {
+    try {
+      const user = await UserModel.findById(userId);
+      if (!user) throw new Error("User not found");
+      
+      // Increment the count
+      const currentCount = user.mockInterviewsCount || 0;
+      const newCount = currentCount + 1;
+      
+      // Update the user
+      user.mockInterviewsCount = newCount;
+      await user.save();
+      
+      return newCount;
+    } catch (error) {
+      console.error('Error updating mock interview count:', error);
+      throw new Error("Failed to update mock interview count");
+    }
+  }
+  
+  // Resume Template methods
+  async getResumeTemplate(id: number): Promise<ResumeTemplate | undefined> {
+    try {
+      const template = await ResumeTemplateModel.findById(id);
+      if (!template) return undefined;
+      
+      return this.convertMongoResumeTemplateToSchemaResumeTemplate(template);
+    } catch (error) {
+      console.error('Error getting resume template:', error);
+      return undefined;
+    }
+  }
+  
+  async getResumeTemplates(category?: string): Promise<ResumeTemplate[]> {
+    try {
+      let query = {};
+      if (category) {
+        query = { category };
+      }
+      
+      const templates = await ResumeTemplateModel.find(query);
+      return templates.map(template => this.convertMongoResumeTemplateToSchemaResumeTemplate(template));
+    } catch (error) {
+      console.error('Error getting resume templates:', error);
+      return [];
+    }
+  }
+  
+  async createResumeTemplate(insertTemplate: InsertResumeTemplate): Promise<ResumeTemplate> {
+    try {
+      const template = new ResumeTemplateModel(insertTemplate);
+      const savedTemplate = await template.save();
+      
+      return this.convertMongoResumeTemplateToSchemaResumeTemplate(savedTemplate);
+    } catch (error) {
+      console.error('Error creating resume template:', error);
+      throw new Error('Failed to create resume template');
     }
   }
 
@@ -377,7 +440,20 @@ export class MongoStorage implements IStorage {
       role: user.role,
       plan: user.plan,
       profilePicture: user.profilePicture,
-      createdAt: user.createdAt
+      createdAt: user.createdAt,
+      mockInterviewsCount: user.mockInterviewsCount || 0
+    };
+  }
+  
+  private convertMongoResumeTemplateToSchemaResumeTemplate(template: any): ResumeTemplate {
+    return {
+      id: template._id.toString(),
+      name: template.name,
+      description: template.description,
+      structure: template.structure,
+      category: template.category,
+      previewImage: template.previewImage || null,
+      createdAt: template.createdAt
     };
   }
 
@@ -387,6 +463,7 @@ export class MongoStorage implements IStorage {
       userId: resume.userId.toString(),
       title: resume.title,
       content: resume.content,
+      templateId: resume.templateId || null,
       atsScore: resume.atsScore,
       lastUpdated: resume.lastUpdated || resume.createdAt,
       isOptimized: resume.isOptimized

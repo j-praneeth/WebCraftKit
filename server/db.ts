@@ -85,6 +85,15 @@ const pricingPlanSchema = new mongoose.Schema({
   recommended: { type: Boolean, default: false }
 });
 
+const resumeTemplateSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, required: true },
+  structure: { type: Object, required: true },
+  category: { type: String, enum: ['free', 'premium'], default: 'free' },
+  previewImage: { type: String },
+  createdAt: { type: Date, default: Date.now }
+});
+
 // Register models
 export const User = mongoose.model('User', userSchema);
 export const Resume = mongoose.model('Resume', resumeSchema);
