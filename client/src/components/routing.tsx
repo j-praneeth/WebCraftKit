@@ -2,6 +2,8 @@ import { Switch, Route, useLocation } from "wouter";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import ResumeBuilder from "@/pages/resume-builder";
+import ResumeEditorNew from "@/pages/resume-builder/new";
+import ResumeEditor from "@/pages/resume-builder/[id]";
 import CoverLetter from "@/pages/cover-letter";
 import InterviewPrep from "@/pages/interview-prep";
 import MockInterviews from "@/pages/mock-interviews";
@@ -33,6 +35,8 @@ export function AppRoutes() {
       <Route path="/" component={isAuthenticated ? Dashboard : LandingPage} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/resume-builder" component={ResumeBuilder} />
+      <Route path="/resume-builder/new" component={ResumeEditorNew} />
+      <Route path="/resume-builder/:id" component={ResumeEditor} />
       <Route path="/cover-letter" component={CoverLetter} />
       <Route path="/interview-prep" component={InterviewPrep} />
       <Route path="/mock-interviews" component={MockInterviews} />
