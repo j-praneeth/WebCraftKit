@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { MockInterview } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -32,7 +32,12 @@ function MockInterviews() {
   const interviewLimit = user?.plan === 'free' ? 3 : null;
   const hasReachedLimit = interviewLimit !== null && userInterviewCount >= interviewLimit;
 
-  const handleStartAIInterview = () => {
+  // Create a new mock interview record in the database when starting an interview
+  const createMockInterviewMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", "/api/mock-interviews", data),
+  });
+
+  const handleStartAIInterview = async () => {
     if (hasReachedLimit) {
       toast({
         title: "Interview limit reached",
@@ -42,16 +47,77 @@ function MockInterviews() {
       return;
     }
     
-    setShowInterviewSim(true);
+    try {
+      // Create a mock interview entry in the database
+      await createMockInterviewMutation.mutateAsync({
+        title: `Interview for ${selectedJobRole} position`,
+        date: new Date(),
+        score: null,
+        feedback: null,
+        transcript: null,
+        videoUrl: null
+      });
+      
+      // Show the interview simulator
+      setShowInterviewSim(true);
+    } catch (error) {
+      console.error("Error creating mock interview:", error);
+      toast({
+        title: "Error",
+        description: "Could not start the interview. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleInterviewComplete = (result: any) => {
-    queryClient.invalidateQueries({ queryKey: ["/api/mock-interviews"] });
-    
-    toast({
-      title: "Interview completed",
-      description: "Your AI interview feedback is ready. Check your results below.",
-    });
+  // Update the mock interview with results when completed
+  const updateMockInterviewMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number, data: any }) => 
+      apiRequest("PATCH", `/api/mock-interviews/${id}`, data),
+  });
+
+  const handleInterviewComplete = async (result: any) => {
+    try {
+      // Get the most recent interview (which should be the one we just completed)
+      const recentInterviews = await queryClient.fetchQuery({ 
+        queryKey: ["/api/mock-interviews"] 
+      });
+      
+      if (Array.isArray(recentInterviews) && recentInterviews.length > 0) {
+        // Sort to get the most recent one
+        const sortedInterviews = [...recentInterviews].sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+        
+        const currentInterview = sortedInterviews[0];
+        
+        // Update the interview with the results
+        await updateMockInterviewMutation.mutateAsync({
+          id: currentInterview.id,
+          data: {
+            transcript: result.transcript,
+            score: result.analysis.overallScore,
+            feedback: result.analysis.overallFeedback,
+            // We could also store more detailed analysis data if needed
+          }
+        });
+      }
+      
+      // Refresh the interviews list
+      queryClient.invalidateQueries({ queryKey: ["/api/mock-interviews"] });
+      
+      toast({
+        title: "Interview completed",
+        description: "Your AI interview feedback is ready. Check your results below.",
+      });
+    } catch (error) {
+      console.error("Error updating mock interview results:", error);
+      toast({
+        title: "Interview completed",
+        description: "Your interview was completed, but there was an issue saving the results.",
+        variant: "default",
+      });
+    }
   };
 
   return (
@@ -193,27 +259,34 @@ function MockInterviews() {
               <CardHeader className="pb-2">
                 <div className="flex justify-between items-start">
                   <CardTitle className="text-lg">{interview.title}</CardTitle>
-                  <div className="flex items-center">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Score: {interview.score}/10
-                    </span>
-                  </div>
+                  {interview.score !== null && (
+                    <div className="flex items-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Score: {interview.score}/10
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <CardDescription>
-                  {format(new Date(interview.updatedAt), 'MMM d, yyyy')}
+                  {format(new Date(interview.date), 'MMM d, yyyy')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="mb-3">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="h-2 rounded-full bg-primary" 
-                      style={{ width: `${interview.score * 10}%` }}
-                    ></div>
+                {interview.score !== null && (
+                  <div className="mb-3">
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="h-2 rounded-full bg-primary" 
+                        style={{ width: `${interview.score * 10}%` }}
+                      ></div>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="line-clamp-3 text-sm text-gray-600">
-                  {interview.feedback}
+                  {interview.feedback || 
+                    (interview.score === null 
+                      ? "Interview in progress or incomplete. Complete the interview to get feedback." 
+                      : "No feedback available.")}
                 </div>
               </CardContent>
               <CardFooter className="border-t pt-3 text-sm">

@@ -401,6 +401,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  app.patch("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const interviewId = parseInt(req.params.id);
+      
+      // Verify the interview exists and belongs to the user
+      const interview = await storage.getMockInterview(interviewId);
+      
+      if (!interview) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+      
+      if (interview.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to update this interview" });
+      }
+      
+      // Update the interview with the provided data
+      const updatedInterview = await storage.updateMockInterview(interviewId, req.body);
+      
+      res.json(updatedInterview);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+    }
+  });
+  
   // Resume Template routes
   app.get("/api/resume-templates", async (req, res) => {
     try {

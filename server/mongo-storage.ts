@@ -357,6 +357,23 @@ export class MongoStorage implements IStorage {
     }
   }
 
+  async updateMockInterview(id: number, data: Partial<MockInterview>): Promise<MockInterview | undefined> {
+    try {
+      const interview = await MockInterviewModel.findByIdAndUpdate(
+        id,
+        { $set: data },
+        { new: true } // Return the updated document
+      );
+      
+      if (!interview) return undefined;
+      
+      return this.convertMongoMockInterviewToSchemaMockInterview(interview);
+    } catch (error) {
+      console.error('Error updating mock interview:', error);
+      return undefined;
+    }
+  }
+
   // Job Posting methods
   async getJobPosting(id: number): Promise<JobPosting | undefined> {
     try {

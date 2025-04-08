@@ -46,6 +46,7 @@ export interface IStorage {
   getMockInterview(id: number): Promise<MockInterview | undefined>;
   getMockInterviewsByUserId(userId: number): Promise<MockInterview[]>;
   createMockInterview(interview: InsertMockInterview): Promise<MockInterview>;
+  updateMockInterview(id: number, data: Partial<MockInterview>): Promise<MockInterview | undefined>;
   
   // Job Posting methods
   getJobPosting(id: number): Promise<JobPosting | undefined>;
@@ -320,11 +321,22 @@ export class MemStorage implements IStorage {
       id, 
       date,
       score: insertInterview.score ?? null, 
-      feedback: insertInterview.feedback ?? null
+      feedback: insertInterview.feedback ?? null,
+      transcript: insertInterview.transcript ?? null,
+      videoUrl: insertInterview.videoUrl ?? null
     };
     
     this.mockInterviews.set(id, interview);
     return interview;
+  }
+
+  async updateMockInterview(id: number, data: Partial<MockInterview>): Promise<MockInterview | undefined> {
+    const interview = await this.getMockInterview(id);
+    if (!interview) return undefined;
+    
+    const updatedInterview = { ...interview, ...data };
+    this.mockInterviews.set(id, updatedInterview);
+    return updatedInterview;
   }
   
   // Job Posting methods
@@ -591,7 +603,9 @@ export class MemStorage implements IStorage {
         improvements: ['Could provide more detailed examples', 'Work on eye contact', 'Speak with more confidence'],
         overall: 'Good performance with room for improvement in delivery and confidence.'
       },
-      date: new Date('2023-05-12')
+      date: new Date('2023-05-12'),
+      transcript: "Interviewer: Tell me about your experience with React.\n\nCandidate: I've been working with React for 3 years, building complex web applications with state management using Redux and more recently React Query...",
+      videoUrl: null
     };
     this.mockInterviews.set(mockInterview.id, mockInterview);
     
