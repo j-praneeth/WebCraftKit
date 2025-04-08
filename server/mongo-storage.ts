@@ -179,13 +179,32 @@ export class MongoStorage implements IStorage {
 
   async createResume(insertResume: InsertResume): Promise<Resume> {
     try {
-      const resume = new ResumeModel(insertResume);
+      // Convert userId to ObjectId
+      const userId = typeof insertResume.userId === 'string' ? 
+        insertResume.userId : 
+        insertResume.userId.toString();
+      
+      // Convert templateId to string if it exists
+      const templateId = insertResume.templateId ? 
+        (typeof insertResume.templateId === 'string' ? 
+          insertResume.templateId : 
+          insertResume.templateId.toString()) : 
+        undefined;
+
+      // Create a new resume document with properly formatted IDs
+      const resume = new ResumeModel({
+        ...insertResume,
+        userId,
+        templateId
+      });
+      
       const savedResume = await resume.save();
+      console.log('Resume saved successfully:', savedResume);
       
       return this.convertMongoResumeToSchemaResume(savedResume);
     } catch (error) {
       console.error('Error creating resume:', error);
-      throw new Error('Failed to create resume');
+      throw new Error(`Failed to create resume: ${error.message}`);
     }
   }
 

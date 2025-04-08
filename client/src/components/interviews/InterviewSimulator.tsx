@@ -56,74 +56,7 @@ export function InterviewSimulator({
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     
-    const socket = new WebSocket(wsUrl);
-    socketRef.current = socket;
-    
-    socket.onopen = () => {
-      console.log('WebSocket connection established');
-      setIsConnecting(false);
-      
-      // Send initial job role information
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          type: 'start',
-          jobRole,
-          userId: user?.id,
-        }));
-      }
-    };
-    
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'question') {
-          // Received a new interview question
-          setMessages(prev => [
-            ...prev, 
-            { 
-              role: 'interviewer', 
-              content: data.content, 
-              timestamp: new Date() 
-            }
-          ]);
-        }
-        else if (data.type === 'follow_up') {
-          // Received a follow-up comment or question
-          setMessages(prev => [
-            ...prev, 
-            { 
-              role: 'interviewer', 
-              content: data.content, 
-              timestamp: new Date() 
-            }
-          ]);
-        }
-        else if (data.type === 'error') {
-          toast({
-            title: "Interview Error",
-            description: data.message,
-            variant: "destructive"
-          });
-        }
-      } catch (error) {
-        console.error("Error parsing WebSocket message:", error);
-      }
-    };
-    
-    socket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setIsConnecting(false);
-      toast({
-        title: "Connection Error",
-        description: "Failed to connect to interview server. Please try again.",
-        variant: "destructive"
-      });
-    };
-    
-    socket.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
+    console.log('Connecting to WebSocket server at:', wsUrl);
     
     // Start with an initial welcome message
     setMessages([{
@@ -136,7 +69,7 @@ export function InterviewSimulator({
     timerRef.current = window.setInterval(() => {
       setElapsed(prev => {
         if (prev >= totalTime) {
-          clearInterval(timerRef.current!);
+          if (timerRef.current) clearInterval(timerRef.current);
           endInterview();
           return prev;
         }
@@ -144,14 +77,98 @@ export function InterviewSimulator({
       });
     }, 1000);
     
+    // Add a delay to ensure the server is ready
+    const connectionTimeout = setTimeout(() => {
+      try {
+        const socket = new WebSocket(wsUrl);
+        socketRef.current = socket;
+        
+        socket.onopen = () => {
+          console.log('WebSocket connection established');
+          setIsConnecting(false);
+          
+          // Send initial job role information
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'start',
+              jobRole,
+              userId: user?.id,
+            }));
+          }
+        };
+        
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'question') {
+              // Received a new interview question
+              setMessages(prev => [
+                ...prev, 
+                { 
+                  role: 'interviewer', 
+                  content: data.content, 
+                  timestamp: new Date() 
+                }
+              ]);
+            }
+            else if (data.type === 'follow_up') {
+              // Received a follow-up comment or question
+              setMessages(prev => [
+                ...prev, 
+                { 
+                  role: 'interviewer', 
+                  content: data.content, 
+                  timestamp: new Date() 
+                }
+              ]);
+            }
+            else if (data.type === 'error') {
+              toast({
+                title: "Interview Error",
+                description: data.message,
+                variant: "destructive"
+              });
+            }
+          } catch (error) {
+            console.error("Error parsing WebSocket message:", error);
+          }
+        };
+        
+        socket.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setIsConnecting(false);
+          toast({
+            title: "Connection Error",
+            description: "Failed to connect to interview server. Please try again.",
+            variant: "destructive"
+          });
+        };
+        
+        socket.onclose = () => {
+          console.log('WebSocket connection closed');
+        };
+        
+      } catch (error) {
+        console.error("Error establishing WebSocket connection:", error);
+        setIsConnecting(false);
+        toast({
+          title: "Connection Error",
+          description: "Failed to connect to interview server. Please try again.",
+          variant: "destructive"
+        });
+      }
+    }, 1000);
+    
     // Clean up function
     return () => {
+      if (connectionTimeout) clearTimeout(connectionTimeout);
       if (timerRef.current) clearInterval(timerRef.current);
       if (socketRef.current) {
         socketRef.current.close();
       }
     };
-  }, []);
+  }, [jobRole, totalTime, user]);
   
   // Scroll to bottom whenever messages change
   useEffect(() => {

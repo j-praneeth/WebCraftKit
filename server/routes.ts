@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import express, { type Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { connectDB } from "./db";
@@ -22,6 +22,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Fall back to in-memory storage
     console.log("Falling back to in-memory storage");
   }
+  
+  // Serve static files for resume templates
+  const staticMiddleware = express.static('public/templates');
+  app.use('/templates', staticMiddleware);
 
   // Initialize OpenAI with API key from environment
   const openai = new OpenAI({ 
@@ -165,15 +169,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/resumes", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as any).id;
+      
+      // Convert user ID to number if it's a string
+      const parsedUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+      
+      // Make sure templateId is a number if present
+      let templateId = req.body.templateId;
+      if (templateId && typeof templateId === 'string') {
+        templateId = parseInt(templateId, 10);
+      }
+      
+      console.log('Creating resume with data:', {
+        ...req.body,
+        userId: parsedUserId,
+        templateId
+      });
+
       const resumeData = insertResumeSchema.parse({
         ...req.body,
-        userId
+        userId: parsedUserId,
+        templateId
       });
+      
+      console.log('Parsed resume data:', resumeData);
       
       const resume = await storage.createResume(resumeData);
       res.status(201).json(resume);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      console.error('Failed to create resume:', error);
+      
+      if (error.errors) {
+        // For Zod validation errors
+        const validationErrors = error.errors.map(err => 
+          `${err.path.join('.')}: ${err.message}`
+        ).join(', ');
+        return res.status(400).json({ 
+          message: `Validation error: ${validationErrors}`,
+          errors: error.errors
+        });
+      }
+      
+      res.status(400).json({ 
+        message: error instanceof Error ? error.message : "An unknown error occurred",
+        error: error instanceof Error ? error.toString() : undefined
+      });
     }
   });
 
