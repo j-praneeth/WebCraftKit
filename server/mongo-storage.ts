@@ -166,7 +166,7 @@ export class MongoStorage implements IStorage {
     }
   }
 
-  async getResumesByUserId(userId: number): Promise<Resume[]> {
+  async getResumesByUserId(userId: number | string): Promise<Resume[]> {
     try {
       const resumes = await ResumeModel.find({ userId });
       

@@ -38,18 +38,10 @@ function NewResume() {
         throw new Error("Please enter a resume title");
       }
 
-      // Convert the userId to a number
-      const userId = typeof user?.id === 'string' ? parseInt(user.id, 10) : user?.id;
-      
-      // Ensure the templateId is a number
-      const templateId = typeof selectedTemplate === 'string' ? 
-        parseInt(selectedTemplate, 10) : selectedTemplate;
-
       console.log('Creating resume with:', {
-        userId,
         title: resumeTitle,
         content: {},
-        templateId,
+        templateId: selectedTemplate,
         isOptimized: false
       });
 
@@ -57,10 +49,9 @@ function NewResume() {
         "POST",
         "/api/resumes",
         {
-          userId,
           title: resumeTitle,
           content: {}, // Empty content to be filled in the editor
-          templateId,
+          templateId: selectedTemplate,
           isOptimized: false
         }
       );

@@ -167,22 +167,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/resumes", isAuthenticated, async (req, res) => {
     try {
-      // Get numeric user ID from the authenticated user
-      const userId = Number((req.user as any).id);
-      
-      // Make sure templateId is a number if present
-      let templateId = req.body.templateId ? Number(req.body.templateId) : null;
+      // MongoDB stores user IDs as strings, so we'll use the user ID directly
+      const userId = (req.user as any).id;
       
       console.log('Creating resume with data:', {
         ...req.body,
         userId,
-        templateId
+        templateId: req.body.templateId
       });
 
       const resumeData = insertResumeSchema.parse({
         ...req.body,
-        userId,
-        templateId
+        userId
       });
       
       console.log('Parsed resume data:', resumeData);

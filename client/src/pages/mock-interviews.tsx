@@ -267,27 +267,29 @@ function MockInterviews() {
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
               <p className="text-gray-500">Loading your interview history...</p>
             </div>
-          ) : interviews?.length ? (
+          ) : interviews?.filter(interview => interview.score !== null)?.length ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {interviews.map((interview) => {
+                {interviews
+                  .filter(interview => interview.score !== null) // Only show completed interviews
+                  .map((interview) => {
                   // Extract job role from title or feedback
                   const jobRole = interview.title?.split("position")[0]?.trim() || 
                                  (typeof interview.feedback === 'object' && interview.feedback ? 
                                    (interview.feedback as any)?.jobRole : undefined) || 
                                  "General Interview";
                                  
-                  // Determine status based on score
+                  // Determine status based on score (no "In Progress" status as we're filtering those out)
                   let status = "Completed";
                   let statusColor = "green";
                   
-                  if (interview.score === null) {
-                    status = "In Progress";
-                    statusColor = "amber";
-                  } else if (interview.score < 5) {
+                  // We know score is not null because we filtered those out
+                  const score = interview.score || 0; // Fallback is just for type safety
+                  
+                  if (score < 5) {
                     status = "Needs Improvement";
                     statusColor = "red";
-                  } else if (interview.score < 8) {
+                  } else if (score < 8) {
                     status = "Good";
                     statusColor = "blue";
                   } else {
@@ -321,66 +323,41 @@ function MockInterviews() {
                         </div>
                       </CardHeader>
                       <CardContent className="py-3">
-                        {interview.score !== null && (
-                          <div className="mb-3">
-                            <div className="flex justify-between text-xs mb-1">
-                              <span>Performance Score</span>
-                              <span className="font-medium">{interview.score}/10</span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div 
-                                className={`h-2 rounded-full ${
-                                  interview.score >= 8 ? 'bg-green-500' : 
-                                  interview.score >= 5 ? 'bg-blue-500' : 'bg-red-500'
-                                }`}
-                                style={{ width: `${interview.score * 10}%` }}
-                              ></div>
-                            </div>
+                        <div className="mb-3">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span>Performance Score</span>
+                            <span className="font-medium">{score}/10</span>
                           </div>
-                        )}
-                        {interview.score === null ? (
-                          <div className="text-sm text-amber-600 italic">
-                            Interview in progress or incomplete. Complete the interview to get feedback.
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                score >= 8 ? 'bg-green-500' : 
+                                score >= 5 ? 'bg-blue-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${score * 10}%` }}
+                            ></div>
                           </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="text-sm text-gray-700 line-clamp-3">
-                              <span className="font-medium">Feedback:</span> {
-                                typeof interview.feedback === 'string' 
-                                  ? interview.feedback 
-                                  : typeof interview.feedback === 'object' && interview.feedback 
-                                    ? (interview.feedback as any).overall || JSON.stringify(interview.feedback)
-                                    : "No detailed feedback available."
-                              }
-                            </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="text-sm text-gray-700 line-clamp-3">
+                            <span className="font-medium">Feedback:</span> {
+                              typeof interview.feedback === 'string' 
+                                ? interview.feedback 
+                                : typeof interview.feedback === 'object' && interview.feedback 
+                                  ? (interview.feedback as any).overall || JSON.stringify(interview.feedback)
+                                  : "No detailed feedback available."
+                            }
                           </div>
-                        )}
+                        </div>
                       </CardContent>
-                      <CardFooter className="bg-gray-50 border-t pt-3 pb-3 flex justify-between">
+                      <CardFooter className="bg-gray-50 border-t pt-3 pb-3 flex justify-center">
                         <Button 
                           variant="outline" 
                           size="sm" 
-                          disabled={interview.score === null}
                           className="text-xs"
                         >
                           View Complete Report
                         </Button>
-                        {interview.score === null && (
-                          <Button 
-                            variant="default" 
-                            size="sm"
-                            className="text-xs"
-                            onClick={() => {
-                              // Resume interview logic could go here
-                              toast({
-                                title: "Resume Not Available",
-                                description: "The ability to resume interviews will be available in a future update.",
-                              });
-                            }}
-                          >
-                            Resume
-                          </Button>
-                        )}
                       </CardFooter>
                     </Card>
                   );

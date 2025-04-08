@@ -19,10 +19,10 @@ const userSchema = new mongoose.Schema({
 });
 
 const resumeSchema = new mongoose.Schema({
-  userId: { type: Number, required: true },
+  userId: { type: mongoose.Schema.Types.Mixed, required: true }, // Accept both string and number IDs
   title: { type: String, required: true },
   content: { type: Object, required: true },
-  templateId: { type: Number },
+  templateId: { type: mongoose.Schema.Types.Mixed }, // Accept both string and number IDs
   atsScore: { type: Number },
   lastUpdated: { type: Date, default: Date.now },
   isOptimized: { type: Boolean, default: false },
