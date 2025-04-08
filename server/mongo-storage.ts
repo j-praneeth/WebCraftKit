@@ -193,9 +193,9 @@ export class MongoStorage implements IStorage {
       console.log('Resume saved successfully:', savedResume);
       
       return this.convertMongoResumeToSchemaResume(savedResume);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating resume:', error);
-      throw new Error(`Failed to create resume: ${error.message}`);
+      throw new Error(`Failed to create resume: ${error?.message || 'Unknown error'}`);
     }
   }
 

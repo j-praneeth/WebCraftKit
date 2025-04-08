@@ -170,20 +170,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // MongoDB stores user IDs as strings, so we'll use the user ID directly
       const userId = (req.user as any).id;
       
-      console.log('Creating resume with data:', {
-        ...req.body,
-        userId,
-        templateId: req.body.templateId
+      // Prepare resume data ensuring templateId is properly handled
+      // Convert templateId to string or null to avoid NaN issues
+      const templateId = req.body.templateId ? String(req.body.templateId) : null;
+      
+      console.log('Creating resume with:', {
+        title: req.body.title,
+        content: req.body.content || {},
+        templateId,
+        isOptimized: Boolean(req.body.isOptimized)
       });
-
-      const resumeData = insertResumeSchema.parse({
-        ...req.body,
+      
+      // Construct clean resume data object
+      const resumeData = {
+        title: req.body.title,
+        content: req.body.content || {},
+        templateId,
+        isOptimized: Boolean(req.body.isOptimized),
         userId
-      });
+      };
       
-      console.log('Parsed resume data:', resumeData);
+      // Validate with our schema
+      const validatedData = insertResumeSchema.parse(resumeData);
+      console.log('Validated resume data:', validatedData);
       
-      const resume = await storage.createResume(resumeData);
+      const resume = await storage.createResume(validatedData);
       res.status(201).json(resume);
     } catch (error: any) {
       console.error('Failed to create resume:', error);
@@ -1118,7 +1129,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Clean up inactive sessions periodically (every 30 minutes)
   setInterval(() => {
     const now = Date.now();
-    for (const [sessionId, session] of activeSessions.entries()) {
+    // Convert entries to array for better compatibility
+    Array.from(activeSessions.entries()).forEach(([sessionId, session]) => {
       // If the session has been inactive for more than 30 minutes, close it
       if (now - session.lastActivity > 30 * 60 * 1000) {
         if (session.ws.readyState === WebSocket.OPEN) {
@@ -1131,7 +1143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         activeSessions.delete(sessionId);
         console.log(`Cleaned up inactive interview session ${sessionId}`);
       }
-    }
+    });
   }, 30 * 60 * 1000);
   
   return httpServer;

@@ -59,13 +59,15 @@ export const resumes = pgTable("resumes", {
   isOptimized: boolean("is_optimized").default(false),
 });
 
-export const insertResumeSchema = createInsertSchema(resumes).pick({
-  userId: true,
-  title: true,
-  content: true,
-  templateId: true,
-  atsScore: true,
-  isOptimized: true,
+// Create a custom Zod schema for resumes that accepts mixed ID types for MongoDB
+
+export const insertResumeSchema = z.object({
+  userId: z.union([z.string(), z.number()]),
+  title: z.string(),
+  content: z.any(),
+  templateId: z.union([z.string(), z.number()]).optional(),
+  atsScore: z.number().optional(),
+  isOptimized: z.boolean().optional().default(false),
 });
 
 // Cover Letter table
