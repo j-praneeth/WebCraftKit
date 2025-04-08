@@ -242,79 +242,173 @@ function MockInterviews() {
       )}
 
       {/* Past Interviews Section */}
-      <div className="mb-4">
-        <h2 className="text-xl font-medium">Past Interviews</h2>
-        <p className="text-sm text-gray-500">Review your previous interview performances</p>
-      </div>
-
-      {isLoadingInterviews ? (
-        <div className="text-center py-8">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-500">Loading your past interviews...</p>
-        </div>
-      ) : interviews?.length ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {interviews.map((interview) => (
-            <Card key={interview.id} className="overflow-hidden">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-lg">{interview.title}</CardTitle>
-                  {interview.score !== null && (
-                    <div className="flex items-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        Score: {interview.score}/10
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <CardDescription>
-                  {format(new Date(interview.date), 'MMM d, yyyy')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {interview.score !== null && (
-                  <div className="mb-3">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="h-2 rounded-full bg-primary" 
-                        style={{ width: `${interview.score * 10}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-                <div className="line-clamp-3 text-sm text-gray-600">
-                  {interview.feedback || 
-                    (interview.score === null 
-                      ? "Interview in progress or incomplete. Complete the interview to get feedback." 
-                      : "No feedback available.")}
-                </div>
-              </CardContent>
-              <CardFooter className="border-t pt-3 text-sm">
-                <Button variant="ghost" size="sm" className="text-primary">
-                  View Details
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <div className="rounded-full bg-gray-100 p-3 mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex flex-col md:flex-row justify-between md:items-center">
+            <div>
+              <CardTitle>Your Interview History</CardTitle>
+              <CardDescription>Track your progress and review past interviews</CardDescription>
             </div>
-            <h3 className="text-lg font-medium mb-1">No interviews yet</h3>
-            <p className="text-sm text-gray-500 mb-4 text-center">
-              Complete your first mock interview to get feedback on your performance
-            </p>
-            <Button onClick={handleStartAIInterview}>
-              Start Your First Interview
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+            <div className="mt-2 md:mt-0 flex items-center space-x-2">
+              <Input 
+                placeholder="Search by job role..." 
+                className="w-full md:w-64"
+                onChange={(e) => {
+                  // We could add search functionality here
+                  // This is just UI for now
+                }}
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingInterviews ? (
+            <div className="text-center py-8">
+              <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading your interview history...</p>
+            </div>
+          ) : interviews?.length ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {interviews.map((interview) => {
+                  // Extract job role from title or feedback
+                  const jobRole = interview.title?.split("position")[0]?.trim() || 
+                                 (typeof interview.feedback === 'object' && interview.feedback ? 
+                                   (interview.feedback as any)?.jobRole : undefined) || 
+                                 "General Interview";
+                                 
+                  // Determine status based on score
+                  let status = "Completed";
+                  let statusColor = "green";
+                  
+                  if (interview.score === null) {
+                    status = "In Progress";
+                    statusColor = "amber";
+                  } else if (interview.score < 5) {
+                    status = "Needs Improvement";
+                    statusColor = "red";
+                  } else if (interview.score < 8) {
+                    status = "Good";
+                    statusColor = "blue";
+                  } else {
+                    status = "Excellent";
+                    statusColor = "green";
+                  }
+                  
+                  return (
+                    <Card key={interview.id} className="overflow-hidden">
+                      <CardHeader className="pb-2 border-b">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-base font-medium">
+                              {jobRole}
+                            </CardTitle>
+                            <CardDescription>
+                              {format(new Date(interview.date), 'MMM d, yyyy • h:mm a')}
+                            </CardDescription>
+                          </div>
+                          <Badge 
+                            className={`
+                              ${statusColor === 'green' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}
+                              ${statusColor === 'amber' ? 'bg-amber-100 text-amber-800 hover:bg-amber-100' : ''}
+                              ${statusColor === 'red' ? 'bg-red-100 text-red-800 hover:bg-red-100' : ''}
+                              ${statusColor === 'blue' ? 'bg-blue-100 text-blue-800 hover:bg-blue-100' : ''}
+                            `}
+                            variant="outline"
+                          >
+                            {status}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="py-3">
+                        {interview.score !== null && (
+                          <div className="mb-3">
+                            <div className="flex justify-between text-xs mb-1">
+                              <span>Performance Score</span>
+                              <span className="font-medium">{interview.score}/10</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className={`h-2 rounded-full ${
+                                  interview.score >= 8 ? 'bg-green-500' : 
+                                  interview.score >= 5 ? 'bg-blue-500' : 'bg-red-500'
+                                }`}
+                                style={{ width: `${interview.score * 10}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
+                        {interview.score === null ? (
+                          <div className="text-sm text-amber-600 italic">
+                            Interview in progress or incomplete. Complete the interview to get feedback.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="text-sm text-gray-700 line-clamp-3">
+                              <span className="font-medium">Feedback:</span> {
+                                typeof interview.feedback === 'string' 
+                                  ? interview.feedback 
+                                  : typeof interview.feedback === 'object' && interview.feedback 
+                                    ? (interview.feedback as any).overall || JSON.stringify(interview.feedback)
+                                    : "No detailed feedback available."
+                              }
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                      <CardFooter className="bg-gray-50 border-t pt-3 pb-3 flex justify-between">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          disabled={interview.score === null}
+                          className="text-xs"
+                        >
+                          View Complete Report
+                        </Button>
+                        {interview.score === null && (
+                          <Button 
+                            variant="default" 
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => {
+                              // Resume interview logic could go here
+                              toast({
+                                title: "Resume Not Available",
+                                description: "The ability to resume interviews will be available in a future update.",
+                              });
+                            }}
+                          >
+                            Resume
+                          </Button>
+                        )}
+                      </CardFooter>
+                    </Card>
+                  );
+                })}
+              </div>
+              
+              {interviews.length > 6 && (
+                <div className="flex justify-center mt-4">
+                  <Button variant="outline">Load More Interviews</Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-16 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                <i className="ri-vidicon-line text-3xl text-gray-400"></i>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No interviews yet</h3>
+              <p className="text-gray-500 mb-4 max-w-md mx-auto">
+                Start a mock interview to practice your skills and get AI-powered feedback
+              </p>
+              <Button onClick={handleStartAIInterview}>
+                Start Your First Interview
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </DashboardLayout>
   );
 }

@@ -710,13 +710,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.warn("OpenAI returned no content for interview analysis, using fallback");
           result = fallbackResponse;
         }
-      } catch (apiError) {
+      } catch (error) {
         // Handle API errors gracefully
-        console.error("OpenAI API error during interview analysis:", apiError);
+        console.error("OpenAI API error during interview analysis:", error);
         result = fallbackResponse;
         
         // If it's a quota or rate limit error, add it to the feedback
-        if (apiError.code === 'insufficient_quota' || apiError.status === 429) {
+        const apiError = error as any; // Type assertion for error handling
+        if (apiError && (apiError.code === 'insufficient_quota' || apiError.status === 429)) {
           result.feedback.overall += " Note: There was an issue with our AI service availability. A basic review has been provided.";
         }
       }
@@ -836,15 +837,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup WebSocket Server for interactive interviews
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   
+  // Define session type
+  interface InterviewSession {
+    ws: WebSocket;
+    jobRole: string;
+    userId: number;
+    questionCount: number;
+    lastActivity: number;
+    lastQuestion?: string;
+    lastAnswer?: string;
+  }
+  
   // Store active interview sessions
-  const activeSessions = new Map();
+  const activeSessions = new Map<string, InterviewSession>();
   
   // Handle WebSocket connections
   wss.on('connection', (ws) => {
     console.log('WebSocket connection established');
-    let sessionId = null;
-    let jobRole = null;
-    let userId = null;
+    let sessionId = '';
+    let jobRole = '';
+    let userId = 0;
     
     ws.on('message', async (message) => {
       try {
@@ -999,36 +1011,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let questionDescription = "";
       
       if (questionNumber === 0) {
-        questionType = "introduction";
-        questionDescription = "Ask about the candidate's background, experience, and interest in this role.";
+        questionType = "specific_introduction";
+        questionDescription = `Ask a detailed question about the candidate's specific experience and qualifications that make them suitable for the ${jobRole} position. Avoid generic questions like "tell me about yourself" and instead focus on their specific skills related to ${jobRole}.`;
       } else if (questionNumber === 1) {
-        questionType = "core_experience";
-        questionDescription = `Ask about specific experience relevant to the ${jobRole} position, focusing on their primary skills.`;
+        questionType = "technical_expertise";
+        questionDescription = `Ask a detailed technical question specific to the ${jobRole} that evaluates their expertise and depth of knowledge in a key area. For technical roles, use specific technologies, frameworks, or methodologies relevant to the role.`;
       } else if (questionNumber === 2) {
-        questionType = "technical_knowledge";
-        questionDescription = `Ask a technical question that tests essential knowledge for a ${jobRole}, tailored to modern industry standards.`;
+        questionType = "practical_experience";
+        questionDescription = `Ask about a specific practical application or project they've worked on that demonstrates their skills as a ${jobRole}. Ask for concrete examples and measurable outcomes.`;
       } else if (questionNumber === 3) {
-        questionType = "problem_solving";
-        questionDescription = `Present a realistic problem that a ${jobRole} would face and ask how they would approach it.`;
+        questionType = "complex_problem_solving";
+        questionDescription = `Present a realistic, challenging problem that a ${jobRole} would face in their daily work. Make it detailed and specific to the industry, asking how they would analyze and solve it step by step.`;
       } else if (questionNumber === 4) {
-        questionType = "behavioral";
-        questionDescription = "Ask about a specific past experience that demonstrates leadership, teamwork, or conflict resolution.";
+        questionType = "leadership_situation";
+        questionDescription = `Ask about a specific situation where they demonstrated leadership or initiative in a role related to ${jobRole}, focusing on how they influenced outcomes and managed stakeholders.`;
       } else if (questionNumber === 5) {
-        questionType = "project_specific";
-        questionDescription = `Ask about a challenging project relevant to a ${jobRole} that they have completed, with specific focus on their contribution.`;
+        questionType = "industry_specific_challenge";
+        questionDescription = `Ask about how they would handle a current major challenge or disruption in the ${jobRole} field. Reference specific industry trends, technologies, or regulatory changes.`;
       } else if (questionNumber === 6) {
-        questionType = "industry_trends";
-        questionDescription = `Ask about current trends, technologies, or developments in the field relevant to a ${jobRole} position.`;
+        questionType = "technical_decision_making";
+        questionDescription = `Ask about a time they had to make a difficult technical decision as a ${jobRole}. Focus on their decision-making process, tradeoffs they considered, and how they justified their choice.`;
       } else if (questionNumber === 7) {
-        questionType = "scenario_based";
-        questionDescription = `Create a complex scenario that a ${jobRole} might encounter and ask how they would handle it.`;
+        questionType = "stakeholder_management";
+        questionDescription = `Ask how they handle complex stakeholder situations specific to ${jobRole}, particularly when facing conflicting requirements or expectations from different parties.`;
       } else if (questionNumber === 8) {
-        questionType = "soft_skills";
-        questionDescription = "Ask about communication, teamwork, or other soft skills essential for workplace success.";
+        questionType = "career_motivation";
+        questionDescription = `Ask about their specific career objectives within the ${jobRole} field and why they are passionate about this particular area of expertise.`;
+      } else if (questionNumber === 9) {
+        questionType = "role_specific_scenario";
+        questionDescription = `Create a detailed, complex scenario that tests multiple aspects of the ${jobRole} position simultaneously, including technical knowledge, soft skills, and business acumen.`;
       } else {
         // For questions beyond the planned sequence
-        questionType = "advanced_expertise";
-        questionDescription = `Ask a challenging question that tests advanced knowledge or expertise specific to experienced ${jobRole} professionals.`;
+        questionType = "advanced_domain_expertise";
+        questionDescription = `Ask an advanced question that tests deep domain expertise specific to senior ${jobRole} professionals. Reference cutting-edge developments, methodologies, or theoretical concepts in the field.`;
       }
       
       const response = await openai.chat.completions.create({
@@ -1036,30 +1051,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messages: [
           {
             role: "system",
-            content: `You are an experienced professional interviewer conducting a job interview for a ${jobRole} position.
-                    Generate a single, thoughtful, and relevant interview question for this stage of the interview.
+            content: `You are an experienced senior interviewer and industry expert conducting a job interview for a ${jobRole} position.
+                    Generate a thorough, specific, and challenging interview question that evaluates the candidate's suitability for this exact role.
                     
                     Current question number: ${questionNumber + 1}
                     Question type: ${questionType}
                     Question focus: ${questionDescription}
                     
                     Requirements:
-                    - Make your question conversational and natural, as if asked in a real interview
-                    - Do not repeat questions or use similar phrasing to previous questions
-                    - Ensure the question is specific to the ${jobRole} position and not generic
+                    - Make your question highly specific to the ${jobRole} position, mentioning relevant technologies, methodologies, or skills
+                    - Avoid generic questions that could apply to any position - tailor it precisely to this role
+                    - Ask questions that require detailed, thoughtful responses demonstrating deep expertise
+                    - Make the question conversational but challenging, as would be asked in a real senior-level interview
                     - Do not include any preamble or explanation - just ask the question directly
-                    - Ask only ONE question in your response
-                    - Keep the question concise but professional (under 50 words if possible)`
+                    - Ask only ONE question in your response (though it may have multiple related parts)
+                    - Make the question substantive but concise (under 60 words if possible)`
           }
         ],
         temperature: 0.7,
-        max_tokens: 150
+        max_tokens: 200
       });
       
-      return response.choices[0]?.message?.content || "Could you tell me about your relevant experience for this role?";
+      return response.choices[0]?.message?.content || `Could you walk me through your most significant achievements and technical expertise specifically related to the ${jobRole} position?`;
     } catch (error) {
       console.error("Error generating interview question:", error);
-      return "Could you tell me about your background and experience relevant to this position?";
+      return `What specific skills and experiences make you well-suited for this ${jobRole} position?`;
     }
   }
   
@@ -1071,11 +1087,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         messages: [
           {
             role: "system",
-            content: `You are an experienced technical interviewer conducting a job interview for a ${jobRole} position.
-                    Based on the candidate's answer to your question, provide a brief, natural follow-up comment or question.
-                    Be conversational and authentic, as a real interviewer would be.
-                    You can acknowledge their answer, ask for clarification, or probe deeper.
-                    Keep your response brief (1-2 sentences).`
+            content: `You are an experienced technical interviewer and industry expert conducting a job interview for a ${jobRole} position.
+                    Based on the candidate's answer to your specific question, provide an insightful follow-up comment or probe deeper
+                    with a targeted question.
+                    
+                    Your follow-up should:
+                    - Demonstrate your expertise in the ${jobRole} field
+                    - Use technical terminology appropriate for the role
+                    - Either challenge the candidate's answer or ask them to elaborate on a specific aspect
+                    - Test both technical knowledge and real-world application
+                    - Remain professional but conversational
+                    - Be focused specifically on evaluating suitability for the ${jobRole} position
+                    
+                    Keep your response concise (1-3 sentences) but impactful.`
           },
           {
             role: "user",
@@ -1083,13 +1107,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         ],
         temperature: 0.7,
-        max_tokens: 100
+        max_tokens: 150
       });
       
-      return response.choices[0]?.message?.content || "That's interesting. Let's move on to the next question.";
+      return response.choices[0]?.message?.content || `That's a good starting point. Can you elaborate on how you've applied that specifically in your previous ${jobRole} work?`;
     } catch (error) {
       console.error("Error generating follow-up comment:", error);
-      return "I see, thank you for sharing that. Let's continue with our next question.";
+      return `Interesting perspective. Let's explore another aspect of the ${jobRole} position in our next question.`;
     }
   }
   
