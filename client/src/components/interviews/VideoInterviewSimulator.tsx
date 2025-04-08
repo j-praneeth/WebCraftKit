@@ -47,6 +47,7 @@ export function VideoInterviewSimulator({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // SpeechRecognition reference
   
   // Calculate time remaining in seconds
   const totalTime = duration * 60;
@@ -63,8 +64,18 @@ export function VideoInterviewSimulator({
   // Initialize camera and microphone
   const setupCamera = async () => {
     try {
+      // First stop any existing tracks
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
+      // Request more specific constraints for better compatibility
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        },
         audio: true
       });
       
@@ -72,9 +83,15 @@ export function VideoInterviewSimulator({
       
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = stream;
+        // Ensure video plays by explicitly calling play()
+        await userVideoRef.current.play().catch(err => {
+          console.error("Error playing video:", err);
+        });
       }
       
       setIsCameraOn(true);
+      setFaceDetected(true); // Set face detected by default
+      
       toast({
         title: "Camera and microphone connected",
         description: "You're all set for your video interview.",
@@ -109,49 +126,125 @@ export function VideoInterviewSimulator({
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    
-    recognition.onresult = (event: any) => {
-      let transcript = '';
-      let isFinalResult = false;
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
       
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          transcript += event.results[i][0].transcript + ' ';
-          isFinalResult = true;
-        }
-      }
+      // Store the recognition instance to enable restart if needed
+      speechRecognitionRef.current = recognition;
       
-      if (transcript) {
-        setUserTranscript(prev => prev + ' ' + transcript);
-        setCurrentAnswer(prev => prev + ' ' + transcript);
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let transcript = '';
+        let interimTranscript = '';
+        let isFinalResult = false;
         
-        // Schedule auto-submission after a pause in speaking
-        if (isFinalResult) {
-          // Clear any existing timeout
-          if (autoSubmitTimeoutRef.current) {
-            clearTimeout(autoSubmitTimeoutRef.current);
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          
+          if (result.isFinal) {
+            transcript += result[0].transcript + ' ';
+            isFinalResult = true;
+          } else {
+            interimTranscript += result[0].transcript + ' ';
+          }
+        }
+        
+        // Update UI with the final and interim transcripts
+        if (transcript || interimTranscript) {
+          const combinedTranscript = transcript.trim();
+          
+          if (combinedTranscript) {
+            setUserTranscript(prev => {
+              // Clean up whitespace to avoid double spaces
+              const cleanedPrev = prev.trim();
+              return cleanedPrev ? `${cleanedPrev} ${combinedTranscript}` : combinedTranscript;
+            });
+            
+            setCurrentAnswer(prev => {
+              const cleanedPrev = prev.trim();
+              return cleanedPrev ? `${cleanedPrev} ${combinedTranscript}` : combinedTranscript;
+            });
           }
           
-          // Set a new timeout to auto-submit after 2.5 seconds of silence
-          autoSubmitTimeoutRef.current = window.setTimeout(() => {
-            if (!interviewerSpeaking) {
-              submitAnswer();
+          // Show interim results in UI if needed
+          if (interimTranscript) {
+            // Could add interim transcript display if needed
+            console.log("Interim transcript:", interimTranscript);
+          }
+          
+          // Schedule auto-submission after a pause in speaking
+          if (isFinalResult) {
+            // Clear any existing timeout
+            if (autoSubmitTimeoutRef.current) {
+              clearTimeout(autoSubmitTimeoutRef.current);
             }
-          }, 2500);
+            
+            // Set a new timeout to auto-submit after a shorter pause (1.5 seconds) for better responsiveness
+            autoSubmitTimeoutRef.current = window.setTimeout(() => {
+              if (!interviewerSpeaking && (userTranscript.trim() || currentAnswer.trim())) {
+                console.log("Auto-submitting answer after speech pause");
+                submitAnswer();
+              }
+            }, 1500);
+          }
         }
-      }
-    };
-    
-    recognition.onerror = (event: any) => {
-      console.error("Speech recognition error:", event.error);
-    };
-    
-    recognition.start();
-    setIsRecording(true);
+      };
+      
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        console.error("Speech recognition error:", event.error);
+        
+        // Handle "no-speech" error by restarting recognition after a short delay
+        if (event.error === 'no-speech') {
+          setTimeout(() => {
+            if (isRecording && speechRecognitionRef.current) {
+              try {
+                speechRecognitionRef.current.stop();
+              } catch (e) {
+                console.error("Error stopping speech recognition:", e);
+              }
+              
+              setTimeout(() => {
+                try {
+                  speechRecognitionRef.current?.start();
+                } catch (e) {
+                  console.error("Error restarting speech recognition:", e);
+                }
+              }, 500);
+            }
+          }, 2000);
+        }
+      };
+      
+      recognition.onend = () => {
+        console.log("Speech recognition ended");
+        
+        // Auto-restart if recording is still enabled
+        if (isRecording) {
+          try {
+            setTimeout(() => {
+              if (isRecording && speechRecognitionRef.current) {
+                speechRecognitionRef.current.start();
+                console.log("Speech recognition restarted");
+              }
+            }, 500);
+          } catch (error) {
+            console.error("Error restarting speech recognition:", error);
+          }
+        }
+      };
+      
+      recognition.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Failed to initialize speech recognition:", error);
+      toast({
+        title: "Speech Recognition Error",
+        description: "Failed to initialize speech recognition. Please try refreshing the page.",
+        variant: "destructive"
+      });
+    }
   };
 
   // Initialize the AI interviewer avatar
@@ -161,6 +254,33 @@ export function VideoInterviewSimulator({
     // this would be connected to a more sophisticated animation system
     setInterviewerSpeaking(false);
   };
+  
+  // Initialize voices for speech synthesis
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  
+  // Load voices when component mounts and when voices change
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      if (availableVoices.length > 0) {
+        setVoices(availableVoices);
+      }
+    };
+    
+    // Load voices right away
+    loadVoices();
+    
+    // Also set up an event listener for when voices change (needed in some browsers)
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+    
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
   
   // Speak the given text using speech synthesis
   const speakText = (text: string) => {
@@ -175,15 +295,27 @@ export function VideoInterviewSimulator({
     const utterance = new SpeechSynthesisUtterance(text);
     
     // Try to find a professional sounding voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(voice => 
+    let preferredVoice = voices.find(voice => 
       voice.name.includes('Daniel') || 
       voice.name.includes('Google UK English Male') ||
       voice.name.includes('Microsoft David')
     );
     
+    // Fallback to any male voice if preferred voices not found
+    if (!preferredVoice) {
+      preferredVoice = voices.find(voice => 
+        voice.name.toLowerCase().includes('male') || 
+        voice.name.includes('David') ||
+        voice.name.includes('Mark') ||
+        voice.name.includes('James')
+      );
+    }
+    
     if (preferredVoice) {
       utterance.voice = preferredVoice;
+      console.log(`Using voice: ${preferredVoice.name}`);
+    } else {
+      console.log("No preferred voice found, using default voice");
     }
     
     utterance.rate = 1.0;
@@ -194,6 +326,12 @@ export function VideoInterviewSimulator({
     };
     
     utterance.onend = () => {
+      setInterviewerSpeaking(false);
+    };
+    
+    // Fix for some browsers where speech can sometimes fail silently
+    utterance.onerror = (event) => {
+      console.error("Speech synthesis error:", event);
       setInterviewerSpeaking(false);
     };
     
@@ -637,11 +775,19 @@ export function VideoInterviewSimulator({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div className="relative rounded-lg overflow-hidden bg-black h-[240px] md:h-[320px]">
             {/* Interviewer Avatar */}
-            <div className={`absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-b from-gray-900 to-gray-800 ${interviewerSpeaking ? 'border-2 border-blue-500' : ''}`}>
+            <div className={`absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-b from-gray-700 to-gray-900 ${interviewerSpeaking ? 'border-2 border-blue-500' : ''}`}>
               <img
                 src={interviewerSpeaking ? '/avatars/interviewer-talking.svg' : '/avatars/interviewer-neutral.svg'}
                 alt="AI Interviewer"
-                className="w-4/5 h-4/5 object-contain"
+                className="w-3/4 h-3/4 object-contain"
+                style={{ filter: "drop-shadow(0px 0px 10px rgba(255,255,255,0.5))" }}
+                onError={(e) => {
+                  console.error("Error loading avatar image");
+                  (e.target as HTMLImageElement).onerror = null;
+                  (e.target as HTMLImageElement).src = interviewerSpeaking 
+                    ? 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="70" r="50" fill="%23eee"/><rect x="75" y="35" width="50" height="10" rx="5" fill="%23333"/><rect x="60" y="60" width="15" height="5" rx="2" fill="%23333"/><rect x="125" y="60" width="15" height="5" rx="2" fill="%23333"/><ellipse cx="100" cy="85" rx="15" ry="10" fill="%23333"/></svg>'
+                    : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="70" r="50" fill="%23eee"/><rect x="75" y="35" width="50" height="10" rx="5" fill="%23333"/><rect x="60" y="60" width="15" height="5" rx="2" fill="%23333"/><rect x="125" y="60" width="15" height="5" rx="2" fill="%23333"/><rect x="85" y="85" width="30" height="5" rx="2" fill="%23333"/></svg>';
+                }}
               />
             </div>
             <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-sm py-1 px-2 rounded">
@@ -746,14 +892,7 @@ export function VideoInterviewSimulator({
               >
                 End Interview
               </Button>
-              <Button 
-                onClick={submitAnswer} 
-                disabled={(!currentAnswer.trim() && !userTranscript.trim()) || isFinished}
-                variant="outline"
-                title="Responses are automatically sent after you pause speaking"
-              >
-                Send Response Manually
-              </Button>
+              {/* Manual submission button removed as requested */}
             </div>
           </div>
         </div>
