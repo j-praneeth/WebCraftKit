@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MockInterview } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { InterviewSimulator } from "@/components/interviews/InterviewSimulator";
+import { VideoInterviewSimulator } from "@/components/interviews/VideoInterviewSimulator";
 import { Badge } from "@/components/ui/badge";
 
 function MockInterviews() {
@@ -89,7 +89,7 @@ function MockInterviews() {
       {showInterviewSim ? (
         <Card className="mb-8">
           <CardContent className="pt-6">
-            <InterviewSimulator 
+            <VideoInterviewSimulator 
               jobRole={selectedJobRole} 
               onComplete={handleInterviewComplete} 
             />

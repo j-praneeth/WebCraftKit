@@ -19,9 +19,10 @@ const userSchema = new mongoose.Schema({
 });
 
 const resumeSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: Number, required: true },
   title: { type: String, required: true },
   content: { type: Object, required: true },
+  templateId: { type: Number },
   atsScore: { type: Number },
   lastUpdated: { type: Date, default: Date.now },
   isOptimized: { type: Boolean, default: false },

@@ -8,8 +8,7 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
 import OpenAI from "openai";
-import { WebSocketServer } from 'ws';
-import WebSocket from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { sendInterviewFeedback, sendInterviewQuestions } from "./email";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -168,26 +167,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/resumes", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).id;
-      
-      // Convert user ID to number if it's a string
-      const parsedUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+      // Get numeric user ID from the authenticated user
+      const userId = Number((req.user as any).id);
       
       // Make sure templateId is a number if present
-      let templateId = req.body.templateId;
-      if (templateId && typeof templateId === 'string') {
-        templateId = parseInt(templateId, 10);
-      }
+      let templateId = req.body.templateId ? Number(req.body.templateId) : null;
       
       console.log('Creating resume with data:', {
         ...req.body,
-        userId: parsedUserId,
+        userId,
         templateId
       });
 
       const resumeData = insertResumeSchema.parse({
         ...req.body,
-        userId: parsedUserId,
+        userId,
         templateId
       });
       
@@ -195,12 +189,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const resume = await storage.createResume(resumeData);
       res.status(201).json(resume);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create resume:', error);
       
       if (error.errors) {
         // For Zod validation errors
-        const validationErrors = error.errors.map(err => 
+        const validationErrors = error.errors.map((err: any) => 
           `${err.path.join('.')}: ${err.message}`
         ).join(', ');
         return res.status(400).json({ 

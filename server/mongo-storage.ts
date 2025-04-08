@@ -179,23 +179,14 @@ export class MongoStorage implements IStorage {
 
   async createResume(insertResume: InsertResume): Promise<Resume> {
     try {
-      // Convert userId to ObjectId
-      const userId = typeof insertResume.userId === 'string' ? 
-        insertResume.userId : 
-        insertResume.userId.toString();
+      // Don't convert userId here - let Mongoose handle the conversion in the schema
+      // Only create a clean document without excessive type conversions
+      // The MongoDB schema already handles the conversion appropriately
+      console.log('Creating resume with data:', insertResume);
       
-      // Convert templateId to string if it exists
-      const templateId = insertResume.templateId ? 
-        (typeof insertResume.templateId === 'string' ? 
-          insertResume.templateId : 
-          insertResume.templateId.toString()) : 
-        undefined;
-
-      // Create a new resume document with properly formatted IDs
+      // Create a new resume document
       const resume = new ResumeModel({
-        ...insertResume,
-        userId,
-        templateId
+        ...insertResume
       });
       
       const savedResume = await resume.save();
