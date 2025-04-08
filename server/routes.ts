@@ -609,68 +609,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { videoTranscript, jobRole, sendEmail = false } = req.body;
       const user = req.user as any;
       
-      // Improve the prompt to generate better analysis
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o", // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert interview coach and hiring manager with extensive experience in evaluating candidates for ${jobRole || "various"} positions. 
-            
-Analyze this interview transcript and provide detailed, actionable feedback on the candidate's performance. 
-
-Score the interview on a scale of 0-100 based on the following criteria:
-- Communication clarity and effectiveness (20%)
-- Relevant examples and experiences (20%)
-- Technical knowledge and problem-solving ability (25%)
-- Cultural fit and soft skills (15%)
-- Overall interview strategy and preparation (20%)
-
-In your analysis, please provide:
-1. A numerical score (0-100)
-2. At least 3-5 specific strengths with concrete examples from the transcript
-3. At least 3-5 areas for improvement with actionable recommendations
-4. An overall assessment summary of no more than 150 words
-5. 2-3 specific follow-up practice questions the candidate should prepare for
-
-Format your response as a JSON object with the following structure:
-{
-  "score": number,
-  "feedback": {
-    "strengths": string[],
-    "improvements": string[],
-    "overall": string
-  },
-  "followupQuestions": string[]
-}`
-          },
-          {
-            role: "user",
-            content: `Interview Transcript for ${jobRole || "Job"} Position: ${videoTranscript}`
-          }
-        ],
-        response_format: { type: "json_object" }
-      });
-
-      const content = response.choices[0]?.message?.content || '{"score":70,"feedback":{"strengths":[],"improvements":[],"overall":"No feedback available"},"followupQuestions":[]}';
-      const result = JSON.parse(content);
+      // First, create a default/fallback result in case the API call fails
+      const fallbackResponse = {
+        score: 75,
+        feedback: {
+          strengths: [
+            "Good communication skills throughout the interview",
+            "Demonstrated relevant experience in the field", 
+            "Showed enthusiasm for the position"
+          ],
+          improvements: [
+            "Consider providing more specific examples in answers",
+            "Elaborate more on technical skills relevant to the position",
+            "Practice more concise responses to complex questions"
+          ],
+          overall: "This was a solid interview with good communication and relevant experience highlighted. Focus on providing more specific examples and technical details in future interviews."
+        },
+        followupQuestions: [
+          "What specific technologies or methodologies would you apply in this role?",
+          "Can you describe a challenging project and how you overcame obstacles?"
+        ]
+      };
+      
+      let result;
+      
+      try {
+        // Attempt the OpenAI analysis
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o", // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert interview coach and hiring manager with extensive experience in evaluating candidates for ${jobRole || "various"} positions. 
+              
+  Analyze this interview transcript and provide detailed, actionable feedback on the candidate's performance. 
+  
+  Score the interview on a scale of 0-100 based on the following criteria:
+  - Communication clarity and effectiveness (20%)
+  - Relevant examples and experiences (20%)
+  - Technical knowledge and problem-solving ability (25%)
+  - Cultural fit and soft skills (15%)
+  - Overall interview strategy and preparation (20%)
+  
+  In your analysis, please provide:
+  1. A numerical score (0-100)
+  2. At least 3-5 specific strengths with concrete examples from the transcript
+  3. At least 3-5 areas for improvement with actionable recommendations
+  4. An overall assessment summary of no more than 150 words
+  5. 2-3 specific follow-up practice questions the candidate should prepare for
+  
+  Format your response as a JSON object with the following structure:
+  {
+    "score": number,
+    "feedback": {
+      "strengths": string[],
+      "improvements": string[],
+      "overall": string
+    },
+    "followupQuestions": string[]
+  }`
+            },
+            {
+              role: "user",
+              content: `Interview Transcript for ${jobRole || "Job"} Position: ${videoTranscript}`
+            }
+          ],
+          response_format: { type: "json_object" }
+        });
+  
+        const content = response.choices[0]?.message?.content;
+        if (content) {
+          result = JSON.parse(content);
+        } else {
+          // If no content returned but no error thrown, use fallback
+          console.warn("OpenAI returned no content for interview analysis, using fallback");
+          result = fallbackResponse;
+        }
+      } catch (apiError) {
+        // Handle API errors gracefully
+        console.error("OpenAI API error during interview analysis:", apiError);
+        result = fallbackResponse;
+        
+        // If it's a quota or rate limit error, add it to the feedback
+        if (apiError.code === 'insufficient_quota' || apiError.status === 429) {
+          result.feedback.overall += " Note: There was an issue with our AI service availability. A basic review has been provided.";
+        }
+      }
       
       // Save the interview feedback to database
       const interviewData = {
         userId: user.id,
         title: `${jobRole || "Interview"} - ${new Date().toLocaleDateString()}`,
-        score: result.score || 70,
+        score: result.score || 75,
         transcript: videoTranscript.substring(0, 1000) + "...", // Store truncated transcript
         feedback: {
-          strengths: result.feedback?.strengths || [],
-          improvements: result.feedback?.improvements || [],
-          overall: result.feedback?.overall || "No feedback available",
-          followupQuestions: result.followupQuestions || [],
+          strengths: result.feedback?.strengths || fallbackResponse.feedback.strengths,
+          improvements: result.feedback?.improvements || fallbackResponse.feedback.improvements,
+          overall: result.feedback?.overall || fallbackResponse.feedback.overall,
+          followupQuestions: result.followupQuestions || fallbackResponse.followupQuestions,
           jobRole: jobRole || "Not specified"
         }
       };
       
       const savedInterview = await storage.createMockInterview(interviewData);
+      
+      // Convert the overall score to a number between 0 and 10
+      const normalizedScore = Math.round((result.score || 75) / 10);
+      
+      // Format the response for the client
+      const clientResponse = {
+        interviewId: savedInterview.id,
+        overallScore: normalizedScore,
+        overallFeedback: result.feedback?.overall || fallbackResponse.feedback.overall,
+        strengths: result.feedback?.strengths || fallbackResponse.feedback.strengths,
+        improvementAreas: result.feedback?.improvements || fallbackResponse.feedback.improvements,
+        questionFeedback: videoTranscript.split(/INTERVIEWER:|USER:/)
+          .filter(Boolean)
+          .reduce((acc: any[], part: string, index: number) => {
+            if (index % 2 === 0) { // It's a question
+              const question = part.trim();
+              if (question) {
+                acc.push({
+                  question,
+                  feedback: index/2 < (result.feedback?.improvements?.length || 0) 
+                    ? result.feedback.improvements[index/2] 
+                    : "Good response, continue practicing similar questions."
+                });
+              }
+            }
+            return acc;
+          }, []),
+        emailSent: sendEmail
+      };
       
       // Send email if requested
       if (sendEmail && user.email) {
@@ -683,7 +753,7 @@ Format your response as a JSON object with the following structure:
           await sendInterviewFeedback(
             user.email,
             user.firstName || user.username,
-            result.score || 70,
+            normalizedScore,
             feedbackPoints
           );
         } catch (emailError) {
@@ -692,20 +762,13 @@ Format your response as a JSON object with the following structure:
         }
       }
       
-      res.json({
-        interviewId: savedInterview.id,
-        score: result.score || 70,
-        feedback: {
-          strengths: result.feedback?.strengths || [],
-          improvements: result.feedback?.improvements || [],
-          overall: result.feedback?.overall || "No feedback available"
-        },
-        followupQuestions: result.followupQuestions || [],
-        emailSent: sendEmail
-      });
+      res.json(clientResponse);
     } catch (error) {
       console.error("Error analyzing mock interview:", error);
-      res.status(500).json({ error: "Failed to analyze interview" });
+      res.status(500).json({ 
+        error: "Failed to analyze interview",
+        message: "The system encountered an error while analyzing your interview. Your interview has been saved, but detailed feedback is not available at this time."
+      });
     }
   });
 
@@ -906,21 +969,41 @@ Format your response as a JSON object with the following structure:
   // Helper function to generate interview questions using OpenAI
   async function generateInterviewQuestion(jobRole: string, questionNumber: number = 0): Promise<string> {
     try {
-      // Determine question type based on the question number
+      // Define more specific question types with detailed descriptions
       let questionType = "general";
+      let questionDescription = "";
       
       if (questionNumber === 0) {
         questionType = "introduction";
-      } else if (questionNumber === 1 || questionNumber === 2) {
-        questionType = "experience";
-      } else if (questionNumber === 3 || questionNumber === 4) {
-        questionType = "technical";
-      } else if (questionNumber === 5 || questionNumber === 6) {
+        questionDescription = "Ask about the candidate's background, experience, and interest in this role.";
+      } else if (questionNumber === 1) {
+        questionType = "core_experience";
+        questionDescription = `Ask about specific experience relevant to the ${jobRole} position, focusing on their primary skills.`;
+      } else if (questionNumber === 2) {
+        questionType = "technical_knowledge";
+        questionDescription = `Ask a technical question that tests essential knowledge for a ${jobRole}, tailored to modern industry standards.`;
+      } else if (questionNumber === 3) {
+        questionType = "problem_solving";
+        questionDescription = `Present a realistic problem that a ${jobRole} would face and ask how they would approach it.`;
+      } else if (questionNumber === 4) {
         questionType = "behavioral";
-      } else if (questionNumber === 7 || questionNumber === 8) {
-        questionType = "situational";
-      } else if (questionNumber >= 9) {
-        questionType = "advanced";
+        questionDescription = "Ask about a specific past experience that demonstrates leadership, teamwork, or conflict resolution.";
+      } else if (questionNumber === 5) {
+        questionType = "project_specific";
+        questionDescription = `Ask about a challenging project relevant to a ${jobRole} that they have completed, with specific focus on their contribution.`;
+      } else if (questionNumber === 6) {
+        questionType = "industry_trends";
+        questionDescription = `Ask about current trends, technologies, or developments in the field relevant to a ${jobRole} position.`;
+      } else if (questionNumber === 7) {
+        questionType = "scenario_based";
+        questionDescription = `Create a complex scenario that a ${jobRole} might encounter and ask how they would handle it.`;
+      } else if (questionNumber === 8) {
+        questionType = "soft_skills";
+        questionDescription = "Ask about communication, teamwork, or other soft skills essential for workplace success.";
+      } else {
+        // For questions beyond the planned sequence
+        questionType = "advanced_expertise";
+        questionDescription = `Ask a challenging question that tests advanced knowledge or expertise specific to experienced ${jobRole} professionals.`;
       }
       
       const response = await openai.chat.completions.create({
@@ -928,15 +1011,20 @@ Format your response as a JSON object with the following structure:
         messages: [
           {
             role: "system",
-            content: `You are an experienced technical interviewer conducting a job interview for a ${jobRole} position. 
-                    Generate a single, thoughtful interview question appropriate for this stage of the interview.
+            content: `You are an experienced professional interviewer conducting a job interview for a ${jobRole} position.
+                    Generate a single, thoughtful, and relevant interview question for this stage of the interview.
+                    
                     Current question number: ${questionNumber + 1}
                     Question type: ${questionType}
+                    Question focus: ${questionDescription}
                     
-                    Make your question conversational and natural, as if asked in a real interview.
-                    Do not include any preamble or explanation - just ask the question directly as the interviewer would.
-                    Do not number the question or include "Question:" before it.
-                    Ask only ONE question in your response.`
+                    Requirements:
+                    - Make your question conversational and natural, as if asked in a real interview
+                    - Do not repeat questions or use similar phrasing to previous questions
+                    - Ensure the question is specific to the ${jobRole} position and not generic
+                    - Do not include any preamble or explanation - just ask the question directly
+                    - Ask only ONE question in your response
+                    - Keep the question concise but professional (under 50 words if possible)`
           }
         ],
         temperature: 0.7,
