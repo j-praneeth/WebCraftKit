@@ -43,10 +43,10 @@ export interface IStorage {
   createInterviewQuestion(question: InsertInterviewQuestion): Promise<InterviewQuestion>;
   
   // Mock Interview methods
-  getMockInterview(id: number): Promise<MockInterview | undefined>;
+  getMockInterview(id: number | string): Promise<MockInterview | undefined>;
   getMockInterviewsByUserId(userId: number): Promise<MockInterview[]>;
   createMockInterview(interview: InsertMockInterview): Promise<MockInterview>;
-  updateMockInterview(id: number, data: Partial<MockInterview>): Promise<MockInterview | undefined>;
+  updateMockInterview(id: number | string, data: Partial<MockInterview>): Promise<MockInterview | undefined>;
   
   // Job Posting methods
   getJobPosting(id: number): Promise<JobPosting | undefined>;
@@ -302,8 +302,8 @@ export class MemStorage implements IStorage {
   }
   
   // Mock Interview methods
-  async getMockInterview(id: number): Promise<MockInterview | undefined> {
-    return this.mockInterviews.get(id);
+  async getMockInterview(id: number | string): Promise<MockInterview | undefined> {
+    return this.mockInterviews.get(typeof id === 'string' ? parseInt(id) : id);
   }
   
   async getMockInterviewsByUserId(userId: number): Promise<MockInterview[]> {
@@ -330,12 +330,13 @@ export class MemStorage implements IStorage {
     return interview;
   }
 
-  async updateMockInterview(id: number, data: Partial<MockInterview>): Promise<MockInterview | undefined> {
-    const interview = await this.getMockInterview(id);
+  async updateMockInterview(id: number | string, data: Partial<MockInterview>): Promise<MockInterview | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    const interview = await this.getMockInterview(numericId);
     if (!interview) return undefined;
     
     const updatedInterview = { ...interview, ...data };
-    this.mockInterviews.set(id, updatedInterview);
+    this.mockInterviews.set(numericId, updatedInterview);
     return updatedInterview;
   }
   

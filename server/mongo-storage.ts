@@ -320,9 +320,10 @@ export class MongoStorage implements IStorage {
   }
 
   // Mock Interview methods
-  async getMockInterview(id: number): Promise<MockInterview | undefined> {
+  async getMockInterview(id: number | string): Promise<MockInterview | undefined> {
     try {
-      const interview = await MockInterviewModel.findById(id);
+      // Convert the id to string to ensure it's treated as an ObjectId string
+      const interview = await MockInterviewModel.findById(String(id));
       if (!interview) return undefined;
       
       return this.convertMongoMockInterviewToSchemaMockInterview(interview);
@@ -357,15 +358,19 @@ export class MongoStorage implements IStorage {
     }
   }
 
-  async updateMockInterview(id: number, data: Partial<MockInterview>): Promise<MockInterview | undefined> {
+  async updateMockInterview(id: number | string, data: Partial<MockInterview>): Promise<MockInterview | undefined> {
     try {
+      // Convert the id to string to ensure it's treated as an ObjectId string
       const interview = await MockInterviewModel.findByIdAndUpdate(
-        id,
+        String(id),
         { $set: data },
         { new: true } // Return the updated document
       );
       
-      if (!interview) return undefined;
+      if (!interview) {
+        console.error(`No interview found with ID: ${id}`);
+        return undefined;
+      }
       
       return this.convertMongoMockInterviewToSchemaMockInterview(interview);
     } catch (error) {

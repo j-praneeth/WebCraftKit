@@ -404,7 +404,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const interviewId = parseInt(req.params.id);
+      // Use the ID directly as MongoDB ObjectId
+      const interviewId = req.params.id;
       
       // Verify the interview exists and belongs to the user
       const interview = await storage.getMockInterview(interviewId);
@@ -413,7 +414,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Interview not found" });
       }
       
-      if (interview.userId !== userId) {
+      // Convert userId to string when comparing with MongoDB ObjectId
+      if (interview.userId.toString() !== userId.toString()) {
         return res.status(403).json({ message: "You don't have permission to update this interview" });
       }
       
