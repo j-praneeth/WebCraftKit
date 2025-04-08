@@ -1,135 +1,167 @@
-import OpenAI from "openai";
+// Helper functions for interacting with our OpenAI API endpoints
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-
-// In client-side Vite apps, we need to use the API through a backend proxy
-// to avoid exposing API keys in the frontend
-const makeApiRequest = async (endpoint: string, data: any) => {
-  const response = await fetch(`/api/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-  
-  if (!response.ok) {
-    throw new Error(`API request failed with status ${response.status}`);
-  }
-  
-  return response.json();
-};
-
-// Resume optimization
-export async function optimizeResume(resumeContent: any, jobDescription: string): Promise<{
-  optimizedContent: any,
-  atsScore: number,
-  suggestions: string[]
-}> {
+// Analyze a mock interview recording/transcript
+export async function analyzeMockInterview(transcript: string, jobRole?: string): Promise<any> {
   try {
-    const result = await makeApiRequest('optimize-resume', {
-      resumeContent,
-      jobDescription
+    const response = await fetch('/api/analyze-mock-interview', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        videoTranscript: transcript,
+        jobRole,
+      }),
     });
     
-    return {
-      optimizedContent: result.optimizedContent || resumeContent,
-      atsScore: result.atsScore || 70,
-      suggestions: result.suggestions || []
-    };
+    if (!response.ok) {
+      throw new Error('Failed to analyze mock interview');
+    }
+    
+    return await response.json();
   } catch (error) {
-    console.error("Error optimizing resume:", error);
-    throw new Error("Failed to optimize resume. Please try again later.");
+    console.error('Error analyzing mock interview:', error);
+    throw error;
   }
 }
 
-// Cover letter generation
-export async function generateCoverLetter(resumeContent: any, jobDescription: string, companyName: string): Promise<string> {
+// Optimize a resume for a particular job description
+export async function optimizeResume(resumeContent: any, jobDescription: string): Promise<any> {
   try {
-    const result = await makeApiRequest('generate-cover-letter', {
-      resumeContent,
-      jobDescription,
-      companyName
+    const response = await fetch('/api/optimize-resume', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeContent,
+        jobDescription,
+      }),
     });
-
-    return result.coverLetter || '';
+    
+    if (!response.ok) {
+      throw new Error('Failed to optimize resume');
+    }
+    
+    return await response.json();
   } catch (error) {
-    console.error("Error generating cover letter:", error);
-    throw new Error("Failed to generate cover letter. Please try again later.");
+    console.error('Error optimizing resume:', error);
+    throw error;
   }
 }
 
-// Interview question prediction
-export async function predictInterviewQuestions(
+// Generate a cover letter
+export async function generateCoverLetter(
   resumeContent: any, 
-  jobTitle: string
-): Promise<{
-  behavioral: { question: string, suggestedAnswer: string }[],
-  technical: { question: string, suggestedAnswer: string }[]
-}> {
+  jobDescription: string, 
+  companyName: string
+): Promise<any> {
   try {
-    const result = await makeApiRequest('predict-interview-questions', {
-      resumeContent,
-      jobTitle
+    const response = await fetch('/api/generate-cover-letter', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeContent,
+        jobDescription,
+        companyName,
+      }),
     });
     
-    return {
-      behavioral: result.behavioral || [],
-      technical: result.technical || []
-    };
+    if (!response.ok) {
+      throw new Error('Failed to generate cover letter');
+    }
+    
+    return await response.json();
   } catch (error) {
-    console.error("Error predicting interview questions:", error);
-    throw new Error("Failed to predict interview questions. Please try again later.");
+    console.error('Error generating cover letter:', error);
+    throw error;
   }
 }
 
-// Mock interview analysis
-export async function analyzeMockInterview(videoTranscript: string): Promise<{
-  score: number,
-  feedback: {
-    strengths: string[],
-    improvements: string[],
-    overall: string
-  }
-}> {
+// Calculate job match score
+export async function calculateJobMatchScore(
+  resumeContent: any,
+  jobDescription: string
+): Promise<any> {
   try {
-    const result = await makeApiRequest('analyze-mock-interview', {
-      videoTranscript
+    const response = await fetch('/api/calculate-job-match', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        resumeContent,
+        jobDescription,
+      }),
     });
     
-    return {
-      score: result.score || 70,
-      feedback: {
-        strengths: result.feedback?.strengths || [],
-        improvements: result.feedback?.improvements || [],
-        overall: result.feedback?.overall || "No feedback available"
-      }
-    };
+    if (!response.ok) {
+      throw new Error('Failed to calculate job match score');
+    }
+    
+    return await response.json();
   } catch (error) {
-    console.error("Error analyzing mock interview:", error);
-    throw new Error("Failed to analyze interview. Please try again later.");
+    console.error('Error calculating job match score:', error);
+    throw error;
   }
 }
 
-// Job matching score calculation
-export async function calculateJobMatchScore(resumeContent: any, jobDescription: string): Promise<{
-  score: number,
-  missingKeywords: string[],
-  matchingKeywords: string[]
-}> {
+// Generate interview questions
+export async function generateInterviewQuestions(
+  jobRole: string,
+  count: number = 5
+): Promise<any> {
   try {
-    const result = await makeApiRequest('calculate-job-match', {
-      resumeContent,
-      jobDescription
+    const response = await fetch('/api/generate-interview-questions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jobRole,
+        count,
+      }),
     });
     
-    return {
-      score: result.score || 70,
-      missingKeywords: result.missingKeywords || [],
-      matchingKeywords: result.matchingKeywords || []
-    };
+    if (!response.ok) {
+      throw new Error('Failed to generate interview questions');
+    }
+    
+    return await response.json();
   } catch (error) {
-    console.error("Error calculating job match score:", error);
-    throw new Error("Failed to calculate job match score. Please try again later.");
+    console.error('Error generating interview questions:', error);
+    throw error;
+  }
+}
+
+// Fetch AI feedback for interview answers
+export async function getAnswerFeedback(
+  question: string,
+  answer: string,
+  jobRole: string
+): Promise<any> {
+  try {
+    const response = await fetch('/api/interview-answer-feedback', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        question,
+        answer,
+        jobRole,
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to get answer feedback');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting answer feedback:', error);
+    throw error;
   }
 }

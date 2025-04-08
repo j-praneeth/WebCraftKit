@@ -12,7 +12,7 @@ import Settings from "@/pages/settings";
 import Login from "@/pages/auth/login";
 import Register from "@/pages/auth/register";
 import LandingPage from "@/pages/landing";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/context/auth-context";
 
 // Checks if the current route is public (doesn't require authentication)
 const isPublicRoute = (path: string): boolean => {

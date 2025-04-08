@@ -2,12 +2,15 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { connectDB } from "./db";
-import { insertUserSchema, insertResumeSchema, insertCoverLetterSchema, insertInterviewQuestionSchema, insertResumeTemplateSchema } from "@shared/schema";
+import { insertUserSchema, insertResumeSchema, insertCoverLetterSchema, insertInterviewQuestionSchema, insertResumeTemplateSchema, insertMockInterviewSchema } from "@shared/schema";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
 import OpenAI from "openai";
+import { WebSocketServer } from 'ws';
+import WebSocket from 'ws';
+import { sendInterviewFeedback, sendInterviewQuestions } from "./email";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Connect to MongoDB
@@ -493,14 +496,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/predict-interview-questions', isAuthenticated, async (req, res) => {
     try {
-      const { resumeContent, jobTitle } = req.body;
+      const { resumeContent, jobTitle, sendEmail = false } = req.body;
+      const user = req.user as any;
       
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o", // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
         messages: [
           {
             role: "system",
-            content: "You are an expert interview coach. Generate likely interview questions based on the resume and job title. Include both behavioral and technical questions, along with suggested answers using the STAR format when appropriate. Return your response as JSON."
+            content: "You are an expert interview coach with deep knowledge of the latest industry trends and hiring practices. Generate a comprehensive set of likely interview questions based on the resume and job title. For each question, create a detailed suggested answer using the STAR format (Situation, Task, Action, Result) when appropriate. Include 5-7 behavioral questions and 5-7 technical questions specific to the job role. For technical questions, ensure they test the actual skills needed for the position. Return your response as JSON with the format {\"behavioral\": [{\"question\": string, \"suggestedAnswer\": string}], \"technical\": [{\"question\": string, \"suggestedAnswer\": string}]}."
           },
           {
             role: "user",
@@ -513,9 +517,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const content = response.choices[0]?.message?.content || '{"behavioral":[],"technical":[]}';
       const result = JSON.parse(content);
       
+      // Create separate records for each question in the database
+      const behavioralQuestions = result.behavioral || [];
+      const technicalQuestions = result.technical || [];
+      
+      // Store each question separately
+      for (const q of behavioralQuestions) {
+        await storage.createInterviewQuestion({
+          userId: user.id,
+          question: q.question,
+          suggestedAnswer: q.suggestedAnswer || null,
+          category: 'behavioral'
+        });
+      }
+      
+      for (const q of technicalQuestions) {
+        await storage.createInterviewQuestion({
+          userId: user.id,
+          question: q.question,
+          suggestedAnswer: q.suggestedAnswer || null,
+          category: 'technical'
+        });
+      }
+      
+      // Send email if requested
+      if (sendEmail && user.email) {
+        const allQuestions = [
+          ...(behavioralQuestions.map((q: { question: string }) => q.question)),
+          ...(technicalQuestions.map((q: { question: string }) => q.question))
+        ];
+        
+        try {
+          await sendInterviewQuestions(
+            user.email,
+            user.firstName || user.username,
+            jobTitle,
+            allQuestions
+          );
+        } catch (emailError) {
+          console.error("Failed to send interview questions email:", emailError);
+          // Continue even if email fails
+        }
+      }
+      
       res.json({
         behavioral: result.behavioral || [],
-        technical: result.technical || []
+        technical: result.technical || [],
+        emailSent: sendEmail
       });
     } catch (error) {
       console.error("Error predicting interview questions:", error);
@@ -525,33 +573,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/analyze-mock-interview', isAuthenticated, async (req, res) => {
     try {
-      const { videoTranscript } = req.body;
+      const { videoTranscript, jobRole, sendEmail = false } = req.body;
+      const user = req.user as any;
       
+      // Improve the prompt to generate better analysis
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o", // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
         messages: [
           {
             role: "system",
-            content: "You are an expert interview coach. Analyze this interview transcript and provide detailed feedback on performance. Score the interview on a scale of 0-100. Identify strengths and areas for improvement. Return your analysis in JSON format."
+            content: `You are an expert interview coach and hiring manager with extensive experience in evaluating candidates for ${jobRole || "various"} positions. 
+            
+Analyze this interview transcript and provide detailed, actionable feedback on the candidate's performance. 
+
+Score the interview on a scale of 0-100 based on the following criteria:
+- Communication clarity and effectiveness (20%)
+- Relevant examples and experiences (20%)
+- Technical knowledge and problem-solving ability (25%)
+- Cultural fit and soft skills (15%)
+- Overall interview strategy and preparation (20%)
+
+In your analysis, please provide:
+1. A numerical score (0-100)
+2. At least 3-5 specific strengths with concrete examples from the transcript
+3. At least 3-5 areas for improvement with actionable recommendations
+4. An overall assessment summary of no more than 150 words
+5. 2-3 specific follow-up practice questions the candidate should prepare for
+
+Format your response as a JSON object with the following structure:
+{
+  "score": number,
+  "feedback": {
+    "strengths": string[],
+    "improvements": string[],
+    "overall": string
+  },
+  "followupQuestions": string[]
+}`
           },
           {
             role: "user",
-            content: `Interview Transcript: ${videoTranscript}`
+            content: `Interview Transcript for ${jobRole || "Job"} Position: ${videoTranscript}`
           }
         ],
         response_format: { type: "json_object" }
       });
 
-      const content = response.choices[0]?.message?.content || '{"score":70,"feedback":{"strengths":[],"improvements":[],"overall":"No feedback available"}}';
+      const content = response.choices[0]?.message?.content || '{"score":70,"feedback":{"strengths":[],"improvements":[],"overall":"No feedback available"},"followupQuestions":[]}';
       const result = JSON.parse(content);
       
+      // Save the interview feedback to database
+      const interviewData = {
+        userId: user.id,
+        title: `${jobRole || "Interview"} - ${new Date().toLocaleDateString()}`,
+        score: result.score || 70,
+        transcript: videoTranscript.substring(0, 1000) + "...", // Store truncated transcript
+        feedback: {
+          strengths: result.feedback?.strengths || [],
+          improvements: result.feedback?.improvements || [],
+          overall: result.feedback?.overall || "No feedback available",
+          followupQuestions: result.followupQuestions || [],
+          jobRole: jobRole || "Not specified"
+        }
+      };
+      
+      const savedInterview = await storage.createMockInterview(interviewData);
+      
+      // Send email if requested
+      if (sendEmail && user.email) {
+        try {
+          const feedbackPoints = [
+            ...(result.feedback?.strengths || []).map((s: string) => `✓ ${s}`),
+            ...(result.feedback?.improvements || []).map((i: string) => `→ ${i}`)
+          ];
+          
+          await sendInterviewFeedback(
+            user.email,
+            user.firstName || user.username,
+            result.score || 70,
+            feedbackPoints
+          );
+        } catch (emailError) {
+          console.error("Failed to send interview feedback email:", emailError);
+          // Continue even if email fails
+        }
+      }
+      
       res.json({
+        interviewId: savedInterview.id,
         score: result.score || 70,
         feedback: {
           strengths: result.feedback?.strengths || [],
           improvements: result.feedback?.improvements || [],
           overall: result.feedback?.overall || "No feedback available"
-        }
+        },
+        followupQuestions: result.followupQuestions || [],
+        emailSent: sendEmail
       });
     } catch (error) {
       console.error("Error analyzing mock interview:", error);
@@ -592,6 +709,262 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create the HTTP server
   const httpServer = createServer(app);
+  
+  // Setup WebSocket Server for interactive interviews
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  
+  // Store active interview sessions
+  const activeSessions = new Map();
+  
+  // Handle WebSocket connections
+  wss.on('connection', (ws) => {
+    console.log('WebSocket connection established');
+    let sessionId = null;
+    let jobRole = null;
+    let userId = null;
+    
+    ws.on('message', async (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        
+        // Handle different message types
+        if (data.type === 'start') {
+          // Initialize a new interview session
+          sessionId = Date.now().toString();
+          jobRole = data.jobRole || 'Software Developer';
+          userId = data.userId;
+          
+          // Store session info
+          activeSessions.set(sessionId, { 
+            ws, 
+            jobRole, 
+            userId, 
+            questionCount: 0,
+            lastActivity: Date.now()
+          });
+          
+          // After a brief pause, send the first question
+          setTimeout(async () => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                const firstQuestion = await generateInterviewQuestion(jobRole);
+                ws.send(JSON.stringify({
+                  type: 'question',
+                  content: firstQuestion
+                }));
+                
+                // Update question count
+                const session = activeSessions.get(sessionId);
+                if (session) {
+                  session.questionCount++;
+                  session.lastQuestion = firstQuestion;
+                  session.lastActivity = Date.now();
+                }
+              } catch (error) {
+                console.error('Error generating first question:', error);
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  message: 'Failed to generate interview question. Please try again.'
+                }));
+              }
+            }
+          }, 3000);
+        }
+        else if (data.type === 'answer' && sessionId) {
+          // User has answered a question
+          const session = activeSessions.get(sessionId);
+          
+          if (!session) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Session not found. Please restart the interview.'
+            }));
+            return;
+          }
+          
+          // Update session activity
+          session.lastActivity = Date.now();
+          session.lastAnswer = data.content;
+          
+          // Based on their answer, either provide a follow-up comment or ask a new question
+          try {
+            // 30% chance of follow-up, 70% chance of new question
+            const shouldAskFollowUp = Math.random() < 0.3;
+            
+            if (shouldAskFollowUp && session.lastQuestion && session.questionCount <= 10) {
+              // Generate a follow-up comment or question
+              const followUp = await generateFollowUpComment(jobRole, session.lastQuestion, data.content);
+              
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'follow_up',
+                  content: followUp
+                }));
+              }
+            } else {
+              // After a brief pause, send the next question
+              setTimeout(async () => {
+                if (ws.readyState === WebSocket.OPEN) {
+                  try {
+                    // Only ask more questions if we haven't reached the limit (typically 10-12 questions)
+                    if (session.questionCount < 10) {
+                      const nextQuestion = await generateInterviewQuestion(jobRole, session.questionCount);
+                      ws.send(JSON.stringify({
+                        type: 'question',
+                        content: nextQuestion
+                      }));
+                      
+                      // Update session
+                      session.questionCount++;
+                      session.lastQuestion = nextQuestion;
+                    } else {
+                      // If we've asked enough questions, send a closing message
+                      ws.send(JSON.stringify({
+                        type: 'question',
+                        content: "That covers all the questions I had prepared. Do you have any questions for me about the position or the company?"
+                      }));
+                    }
+                  } catch (error) {
+                    console.error('Error generating next question:', error);
+                    ws.send(JSON.stringify({
+                      type: 'error',
+                      message: 'Failed to generate next question. Please try again.'
+                    }));
+                  }
+                }
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('Error processing answer:', error);
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Failed to process your answer. Please try again.'
+              }));
+            }
+          }
+        }
+        else if (data.type === 'end' && sessionId) {
+          // Interview ended by user
+          activeSessions.delete(sessionId);
+          console.log(`Interview session ${sessionId} ended by user`);
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Server error. Please try again.'
+          }));
+        }
+      }
+    });
+    
+    ws.on('close', () => {
+      console.log('WebSocket connection closed');
+      if (sessionId) {
+        activeSessions.delete(sessionId);
+      }
+    });
+  });
+  
+  // Helper function to generate interview questions using OpenAI
+  async function generateInterviewQuestion(jobRole: string, questionNumber: number = 0): Promise<string> {
+    try {
+      // Determine question type based on the question number
+      let questionType = "general";
+      
+      if (questionNumber === 0) {
+        questionType = "introduction";
+      } else if (questionNumber === 1 || questionNumber === 2) {
+        questionType = "experience";
+      } else if (questionNumber === 3 || questionNumber === 4) {
+        questionType = "technical";
+      } else if (questionNumber === 5 || questionNumber === 6) {
+        questionType = "behavioral";
+      } else if (questionNumber === 7 || questionNumber === 8) {
+        questionType = "situational";
+      } else if (questionNumber >= 9) {
+        questionType = "advanced";
+      }
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an experienced technical interviewer conducting a job interview for a ${jobRole} position. 
+                    Generate a single, thoughtful interview question appropriate for this stage of the interview.
+                    Current question number: ${questionNumber + 1}
+                    Question type: ${questionType}
+                    
+                    Make your question conversational and natural, as if asked in a real interview.
+                    Do not include any preamble or explanation - just ask the question directly as the interviewer would.
+                    Do not number the question or include "Question:" before it.
+                    Ask only ONE question in your response.`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 150
+      });
+      
+      return response.choices[0]?.message?.content || "Could you tell me about your relevant experience for this role?";
+    } catch (error) {
+      console.error("Error generating interview question:", error);
+      return "Could you tell me about your background and experience relevant to this position?";
+    }
+  }
+  
+  // Helper function to generate follow-up comments to answers
+  async function generateFollowUpComment(jobRole: string, question: string, answer: string): Promise<string> {
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an experienced technical interviewer conducting a job interview for a ${jobRole} position.
+                    Based on the candidate's answer to your question, provide a brief, natural follow-up comment or question.
+                    Be conversational and authentic, as a real interviewer would be.
+                    You can acknowledge their answer, ask for clarification, or probe deeper.
+                    Keep your response brief (1-2 sentences).`
+          },
+          {
+            role: "user",
+            content: `My question was: "${question}"\n\nCandidate's answer: "${answer}"`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 100
+      });
+      
+      return response.choices[0]?.message?.content || "That's interesting. Let's move on to the next question.";
+    } catch (error) {
+      console.error("Error generating follow-up comment:", error);
+      return "I see, thank you for sharing that. Let's continue with our next question.";
+    }
+  }
+  
+  // Clean up inactive sessions periodically (every 30 minutes)
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of activeSessions.entries()) {
+      // If the session has been inactive for more than 30 minutes, close it
+      if (now - session.lastActivity > 30 * 60 * 1000) {
+        if (session.ws.readyState === WebSocket.OPEN) {
+          session.ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Session timed out due to inactivity.'
+          }));
+          session.ws.close();
+        }
+        activeSessions.delete(sessionId);
+        console.log(`Cleaned up inactive interview session ${sessionId}`);
+      }
+    }
+  }, 30 * 60 * 1000);
+  
   return httpServer;
 }

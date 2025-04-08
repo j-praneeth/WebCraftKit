@@ -42,10 +42,10 @@ function NewResume() {
         "POST",
         "/api/resumes",
         {
-          userId: user?.id,
+          userId: typeof user?.id === 'string' ? parseInt(user?.id, 10) : user?.id,
           title: resumeTitle,
           content: {}, // Empty content to be filled in the editor
-          templateId: selectedTemplate,
+          templateId: selectedTemplate, // already a number from state
           isOptimized: false
         }
       );

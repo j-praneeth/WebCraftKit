@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Resume, InterviewQuestion } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { predictInterviewQuestions } from "@/lib/openai";
+import { generateInterviewQuestions } from "@/lib/openai";
 
 function InterviewPrep() {
   const { user } = useAuth();
@@ -72,8 +72,7 @@ function InterviewPrep() {
         throw new Error("Selected resume not found");
       }
 
-      const predictedQuestions = await predictInterviewQuestions(
-        selectedResume.content,
+      const predictedQuestions = await generateInterviewQuestions(
         jobTitle
       );
 

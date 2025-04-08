@@ -11,6 +11,7 @@ type User = {
   role: string;
   plan: string;
   profilePicture?: string;
+  mockInterviewsCount?: number;
 };
 
 type AuthContextType = {
