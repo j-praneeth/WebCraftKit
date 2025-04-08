@@ -24,11 +24,11 @@ export interface IStorage {
   createResumeTemplate(template: InsertResumeTemplate): Promise<ResumeTemplate>;
   
   // Resume methods
-  getResume(id: number): Promise<Resume | undefined>;
-  getResumesByUserId(userId: number): Promise<Resume[]>;
+  getResume(id: number | string): Promise<Resume | undefined>;
+  getResumesByUserId(userId: number | string): Promise<Resume[]>;
   createResume(resume: InsertResume): Promise<Resume>;
-  updateResume(id: number, data: Partial<Resume>): Promise<Resume | undefined>;
-  deleteResume(id: number): Promise<boolean>;
+  updateResume(id: number | string, data: Partial<Resume>): Promise<Resume | undefined>;
+  deleteResume(id: number | string): Promise<boolean>;
   
   // Cover Letter methods
   getCoverLetter(id: number): Promise<CoverLetter | undefined>;
@@ -194,13 +194,15 @@ export class MemStorage implements IStorage {
   }
   
   // Resume methods
-  async getResume(id: number): Promise<Resume | undefined> {
-    return this.resumes.get(id);
+  async getResume(id: number | string): Promise<Resume | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.resumes.get(numericId);
   }
   
-  async getResumesByUserId(userId: number): Promise<Resume[]> {
+  async getResumesByUserId(userId: number | string): Promise<Resume[]> {
+    const userIdToCompare = userId.toString();
     return Array.from(this.resumes.values()).filter(
-      (resume) => resume.userId === userId,
+      (resume) => resume.userId.toString() === userIdToCompare,
     );
   }
   
@@ -221,17 +223,19 @@ export class MemStorage implements IStorage {
     return resume;
   }
   
-  async updateResume(id: number, data: Partial<Resume>): Promise<Resume | undefined> {
-    const resume = await this.getResume(id);
+  async updateResume(id: number | string, data: Partial<Resume>): Promise<Resume | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    const resume = await this.getResume(numericId);
     if (!resume) return undefined;
     
     const updatedResume = { ...resume, ...data, lastUpdated: new Date() };
-    this.resumes.set(id, updatedResume);
+    this.resumes.set(numericId, updatedResume);
     return updatedResume;
   }
   
-  async deleteResume(id: number): Promise<boolean> {
-    return this.resumes.delete(id);
+  async deleteResume(id: number | string): Promise<boolean> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.resumes.delete(numericId);
   }
   
   // Cover Letter methods

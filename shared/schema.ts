@@ -50,10 +50,10 @@ export const insertResumeTemplateSchema = createInsertSchema(resumeTemplates).pi
 // Resume table
 export const resumes = pgTable("resumes", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: text("user_id").notNull(), // Changed to text to support MongoDB ObjectIds
   title: text("title").notNull(),
   content: jsonb("content").notNull(),
-  templateId: integer("template_id"),
+  templateId: text("template_id"), // Changed to text to support MongoDB ObjectIds
   atsScore: integer("ats_score"),
   lastUpdated: timestamp("last_updated").defaultNow().notNull(),
   isOptimized: boolean("is_optimized").default(false),
@@ -109,7 +109,7 @@ export const insertInterviewQuestionSchema = createInsertSchema(interviewQuestio
 // Mock Interview table
 export const mockInterviews = pgTable("mock_interviews", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: text("user_id").notNull(), // Changed to text to support MongoDB ObjectIds
   title: text("title").notNull(),
   score: integer("score"),
   feedback: jsonb("feedback"),
@@ -118,13 +118,14 @@ export const mockInterviews = pgTable("mock_interviews", {
   date: timestamp("date").defaultNow().notNull(),
 });
 
-export const insertMockInterviewSchema = createInsertSchema(mockInterviews).pick({
-  userId: true,
-  title: true,
-  score: true,
-  feedback: true,
-  transcript: true,
-  videoUrl: true,
+// Use custom schema for Mock Interviews to support MongoDB IDs
+export const insertMockInterviewSchema = z.object({
+  userId: z.union([z.string(), z.number()]),
+  title: z.string(),
+  score: z.number().optional().nullable(),
+  feedback: z.any().optional().nullable(),
+  transcript: z.string().optional().nullable(),
+  videoUrl: z.string().optional().nullable(),
 });
 
 // Job Posting table

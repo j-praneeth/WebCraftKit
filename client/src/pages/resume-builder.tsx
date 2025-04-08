@@ -23,15 +23,31 @@ function ResumeBuilder() {
   });
 
   // Handlers
-  const handleEditResume = (id: number) => {
+  const handleEditResume = (id: number | string) => {
     navigate(`/resume-builder/${id}`);
   };
 
-  const handleDownloadResume = (id: number) => {
+  const handleDownloadResume = (id: number | string) => {
+    // Show toast notification
     toast({
       title: "Download started",
       description: "Your resume is being prepared for download.",
     });
+    
+    // Create a direct download link to the PDF endpoint
+    const downloadUrl = `/api/resumes/${id}/pdf`;
+    
+    // Create a temporary anchor element to trigger the download
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.setAttribute('download', `resume-${id}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 100);
   };
 
   const handleCreateNewResume = () => {

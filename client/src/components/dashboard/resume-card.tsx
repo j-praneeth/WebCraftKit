@@ -5,8 +5,8 @@ import { formatDistanceToNow } from "date-fns";
 
 interface ResumeCardProps {
   resume: Resume;
-  onEdit: (id: number) => void;
-  onDownload: (id: number) => void;
+  onEdit: (id: number | string) => void;
+  onDownload: (id: number | string) => void;
 }
 
 export function ResumeCard({ resume, onEdit, onDownload }: ResumeCardProps) {

@@ -154,12 +154,25 @@ export class MongoStorage implements IStorage {
   }
 
   // Resume methods
-  async getResume(id: number): Promise<Resume | undefined> {
+  async getResume(id: number | string): Promise<Resume | undefined> {
     try {
-      const resume = await ResumeModel.findById(id);
-      if (!resume) return undefined;
+      // Try to find by direct ID first (for MongoDB ObjectIds)
+      try {
+        const resume = await ResumeModel.findById(String(id));
+        if (resume) return this.convertMongoResumeToSchemaResume(resume);
+      } catch (idError) {
+        console.log(`Resume not found with direct ID lookup: ${id}`, idError);
+        // Continue to try other methods if this fails
+      }
       
-      return this.convertMongoResumeToSchemaResume(resume);
+      // Try to find by numeric ID (backward compatibility)
+      if (typeof id === 'number' || !isNaN(Number(id))) {
+        const numericId = Number(id);
+        const resumeByNumericId = await ResumeModel.findOne({ id: numericId });
+        if (resumeByNumericId) return this.convertMongoResumeToSchemaResume(resumeByNumericId);
+      }
+      
+      return undefined;
     } catch (error) {
       console.error('Error getting resume:', error);
       return undefined;
@@ -199,9 +212,9 @@ export class MongoStorage implements IStorage {
     }
   }
 
-  async updateResume(id: number, data: Partial<Resume>): Promise<Resume | undefined> {
+  async updateResume(id: number | string, data: Partial<Resume>): Promise<Resume | undefined> {
     try {
-      const resume = await ResumeModel.findByIdAndUpdate(id, data, { new: true });
+      const resume = await ResumeModel.findByIdAndUpdate(String(id), data, { new: true });
       if (!resume) return undefined;
       
       return this.convertMongoResumeToSchemaResume(resume);
@@ -211,9 +224,9 @@ export class MongoStorage implements IStorage {
     }
   }
 
-  async deleteResume(id: number): Promise<boolean> {
+  async deleteResume(id: number | string): Promise<boolean> {
     try {
-      const result = await ResumeModel.findByIdAndDelete(id);
+      const result = await ResumeModel.findByIdAndDelete(String(id));
       return !!result;
     } catch (error) {
       console.error('Error deleting resume:', error);

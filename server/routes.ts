@@ -150,19 +150,188 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/resumes/:id", isAuthenticated, async (req, res) => {
-    const resumeId = parseInt(req.params.id);
+    // Use the ID directly without parsing as integer, let the storage layer handle it
+    const resumeId = req.params.id;
+    console.log(`Attempting to get resume with ID: ${resumeId}`);
+    
     const resume = await storage.getResume(resumeId);
     
     if (!resume) {
       return res.status(404).json({ message: "Resume not found" });
     }
     
-    // Check if the resume belongs to the user
-    if (resume.userId !== (req.user as any).id) {
+    // Check if the resume belongs to the user - compare as strings to ensure proper comparison
+    const userIdStr = String((req.user as any).id);
+    const resumeUserIdStr = String(resume.userId);
+    
+    if (resumeUserIdStr !== userIdStr) {
+      console.log(`Access forbidden: Resume userId ${resumeUserIdStr} doesn't match logged in user ${userIdStr}`);
       return res.status(403).json({ message: "Forbidden" });
     }
     
     res.json(resume);
+  });
+  
+  // Add PDF download endpoint
+  app.get("/api/resumes/:id/pdf", isAuthenticated, async (req, res) => {
+    try {
+      const resumeId = req.params.id;
+      console.log(`Attempting to generate PDF for resume with ID: ${resumeId}`);
+      
+      const resume = await storage.getResume(resumeId);
+      
+      if (!resume) {
+        return res.status(404).json({ message: "Resume not found" });
+      }
+      
+      // Check if the resume belongs to the user - compare as strings for proper comparison
+      const userIdStr = String((req.user as any).id);
+      const resumeUserIdStr = String(resume.userId);
+      
+      if (resumeUserIdStr !== userIdStr) {
+        console.log(`PDF generation forbidden: Resume userId ${resumeUserIdStr} doesn't match logged in user ${userIdStr}`);
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      // Import PDFKit and generate the PDF
+      const PDFDocument = require('pdfkit');
+      const doc = new PDFDocument({ margin: 50 });
+      
+      // Set response headers for PDF download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=resume-${resumeId}.pdf`);
+      
+      // Pipe the PDF document to the response
+      doc.pipe(res);
+      
+      // Get template if specified
+      let template = null;
+      if (resume.templateId) {
+        try {
+          template = await storage.getResumeTemplate(Number(resume.templateId));
+        } catch (err) {
+          console.log(`Could not load template: ${err}`);
+        }
+      }
+      
+      // Ensure content is safe to access
+      const content = resume.content as any || {};
+      
+      // Set some default styling based on the template or use defaults
+      const structure = template?.structure as any || {};
+      const primaryColor = structure.primaryColor || '#3b82f6';
+      const fontFamily = (structure.fontFamily ? String(structure.fontFamily).split(',')[0] : null) || 'Helvetica';
+      
+      // Add the title
+      try {
+        doc.font(fontFamily).fontSize(24).fillColor(primaryColor);
+      } catch (err) {
+        // If font doesn't exist, fallback to default
+        doc.font('Helvetica').fontSize(24).fillColor(primaryColor);
+      }
+      doc.text(resume.title, { align: 'center' });
+      doc.moveDown();
+      
+      // Add personal info
+      if (content.personalInfo) {
+        const { name, email, phone, address } = content.personalInfo;
+        try {
+          doc.font('Helvetica-Bold').fontSize(14).fillColor('black');
+        } catch (err) {
+          doc.font('Helvetica').fontSize(14).fillColor('black');
+        }
+        doc.text(name || '');
+        doc.font('Helvetica').fontSize(10).fillColor('#444444');
+        if (email) doc.text(email);
+        if (phone) doc.text(phone);
+        if (address) doc.text(address);
+        doc.moveDown();
+      }
+      
+      // Add experience section
+      if (content.experience && Array.isArray(content.experience) && content.experience.length > 0) {
+        try {
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(primaryColor);
+        } catch (err) {
+          doc.font('Helvetica').fontSize(14).fillColor(primaryColor);
+        }
+        doc.text('Experience');
+        doc.moveDown(0.5);
+        
+        content.experience.forEach((exp: any) => {
+          try {
+            doc.font('Helvetica-Bold').fontSize(12).fillColor('black');
+          } catch (err) {
+            doc.font('Helvetica').fontSize(12).fillColor('black');
+          }
+          doc.text(exp.company || '');
+          try {
+            doc.font('Helvetica-Oblique').fontSize(10);
+          } catch (err) {
+            doc.font('Helvetica').fontSize(10);
+          }
+          doc.text(`${exp.title || ''} (${exp.startDate || ''} - ${exp.endDate || 'Present'})`);
+          doc.font('Helvetica').fontSize(10).fillColor('#444444');
+          doc.text(exp.description || '');
+          doc.moveDown();
+        });
+      }
+      
+      // Add education section
+      if (content.education && Array.isArray(content.education) && content.education.length > 0) {
+        try {
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(primaryColor);
+        } catch (err) {
+          doc.font('Helvetica').fontSize(14).fillColor(primaryColor);
+        }
+        doc.text('Education');
+        doc.moveDown(0.5);
+        
+        content.education.forEach((edu: any) => {
+          try {
+            doc.font('Helvetica-Bold').fontSize(12).fillColor('black');
+          } catch (err) {
+            doc.font('Helvetica').fontSize(12).fillColor('black');
+          }
+          doc.text(edu.institution || '');
+          doc.font('Helvetica').fontSize(10).fillColor('#444444');
+          doc.text(`${edu.degree || ''} (${edu.year || ''})`);
+          doc.moveDown();
+        });
+      }
+      
+      // Add skills section
+      if (content.skills && Array.isArray(content.skills) && content.skills.length > 0) {
+        try {
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(primaryColor);
+        } catch (err) {
+          doc.font('Helvetica').fontSize(14).fillColor(primaryColor);
+        }
+        doc.text('Skills');
+        doc.moveDown(0.5);
+        
+        doc.font('Helvetica').fontSize(10).fillColor('#444444');
+        doc.text(content.skills.join(', '));
+        doc.moveDown();
+      }
+      
+      // Add ATS score if available
+      if (resume.atsScore) {
+        try {
+          doc.font('Helvetica-Bold').fontSize(10).fillColor(primaryColor);
+        } catch (err) {
+          doc.font('Helvetica').fontSize(10).fillColor(primaryColor);
+        }
+        doc.text(`ATS Optimization Score: ${resume.atsScore}%`, { align: 'right' });
+      }
+      
+      // Finalize the PDF and end the stream
+      doc.end();
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      res.status(500).json({ message: 'Failed to generate PDF' });
+    }
   });
 
   app.post("/api/resumes", isAuthenticated, async (req, res) => {
@@ -219,42 +388,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/resumes/:id", isAuthenticated, async (req, res) => {
     try {
-      const resumeId = parseInt(req.params.id);
+      // Use the ID directly without parsing as integer
+      const resumeId = req.params.id;
+      console.log(`Attempting to update resume with ID: ${resumeId}`);
+      
       const resume = await storage.getResume(resumeId);
       
       if (!resume) {
         return res.status(404).json({ message: "Resume not found" });
       }
       
-      // Check if the resume belongs to the user
-      if (resume.userId !== (req.user as any).id) {
+      // Check if the resume belongs to the user - compare as strings
+      const userIdStr = String((req.user as any).id);
+      const resumeUserIdStr = String(resume.userId);
+      
+      if (resumeUserIdStr !== userIdStr) {
+        console.log(`Update forbidden: Resume userId ${resumeUserIdStr} doesn't match logged in user ${userIdStr}`);
         return res.status(403).json({ message: "Forbidden" });
       }
       
       const updatedResume = await storage.updateResume(resumeId, req.body);
       res.json(updatedResume);
     } catch (error) {
+      console.error('Error updating resume:', error);
       res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
     }
   });
 
   app.delete("/api/resumes/:id", isAuthenticated, async (req, res) => {
     try {
-      const resumeId = parseInt(req.params.id);
+      // Use the ID directly without parsing as integer
+      const resumeId = req.params.id;
+      console.log(`Attempting to delete resume with ID: ${resumeId}`);
+      
       const resume = await storage.getResume(resumeId);
       
       if (!resume) {
         return res.status(404).json({ message: "Resume not found" });
       }
       
-      // Check if the resume belongs to the user
-      if (resume.userId !== (req.user as any).id) {
+      // Check if the resume belongs to the user - compare as strings
+      const userIdStr = String((req.user as any).id);
+      const resumeUserIdStr = String(resume.userId);
+      
+      if (resumeUserIdStr !== userIdStr) {
+        console.log(`Delete forbidden: Resume userId ${resumeUserIdStr} doesn't match logged in user ${userIdStr}`);
         return res.status(403).json({ message: "Forbidden" });
       }
       
       await storage.deleteResume(resumeId);
       res.json({ message: "Resume deleted successfully" });
     } catch (error) {
+      console.error('Error deleting resume:', error);
       res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
     }
   });
