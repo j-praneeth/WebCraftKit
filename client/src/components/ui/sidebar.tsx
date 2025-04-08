@@ -113,7 +113,7 @@ export function Sidebar() {
             <div className="h-8 w-8 rounded-full bg-primary-200 flex items-center justify-center text-primary-600">
               {user?.firstName ? user.firstName[0] : user?.username ? user.username[0] : "U"}
             </div>
-            <div className="ml-3">
+            <div className="ml-3 flex-1">
               <p className="text-sm font-medium text-gray-700">
                 {user?.firstName && user?.lastName
                   ? `${user.firstName} ${user.lastName}`
@@ -121,6 +121,14 @@ export function Sidebar() {
               </p>
               <p className="text-xs font-medium text-gray-500 capitalize">{user?.plan || "Free"} Plan</p>
             </div>
+            <button
+              onClick={logout}
+              className="text-gray-500 hover:text-gray-700 focus:outline-none"
+              aria-label="Logout"
+              title="Logout"
+            >
+              <i className="ri-logout-box-line text-lg"></i>
+            </button>
           </div>
         </div>
       </div>

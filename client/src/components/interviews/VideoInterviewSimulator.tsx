@@ -174,20 +174,11 @@ export function VideoInterviewSimulator({
             console.log("Interim transcript:", interimTranscript);
           }
           
-          // Schedule auto-submission after a pause in speaking
-          if (isFinalResult) {
-            // Clear any existing timeout
-            if (autoSubmitTimeoutRef.current) {
-              clearTimeout(autoSubmitTimeoutRef.current);
-            }
-            
-            // Set a new timeout to auto-submit after a shorter pause (1.5 seconds) for better responsiveness
-            autoSubmitTimeoutRef.current = window.setTimeout(() => {
-              if (!interviewerSpeaking && (userTranscript.trim() || currentAnswer.trim())) {
-                console.log("Auto-submitting answer after speech pause");
-                submitAnswer();
-              }
-            }, 1500);
+          // Auto-submit immediately when we have a final result and the interviewer is not speaking
+          if (isFinalResult && !interviewerSpeaking && (combinedTranscript.trim() || userTranscript.trim())) {
+            // Submit immediately without delay
+            console.log("Auto-submitting answer immediately");
+            submitAnswer();
           }
         }
       };
@@ -323,16 +314,68 @@ export function VideoInterviewSimulator({
     
     utterance.onstart = () => {
       setInterviewerSpeaking(true);
+      
+      // Mute user's microphone when AI is speaking
+      if (streamRef.current) {
+        streamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = false;
+        });
+      }
+      
+      // Also pause speech recognition while AI is speaking
+      if (speechRecognitionRef.current) {
+        try {
+          speechRecognitionRef.current.stop();
+        } catch (error) {
+          console.error("Error stopping speech recognition:", error);
+        }
+      }
     };
     
     utterance.onend = () => {
       setInterviewerSpeaking(false);
+      
+      // Unmute user's microphone when AI stops speaking
+      if (streamRef.current) {
+        streamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = true;
+        });
+      }
+      
+      // Restart speech recognition
+      if (speechRecognitionRef.current && isRecording) {
+        try {
+          setTimeout(() => {
+            speechRecognitionRef.current?.start();
+          }, 300); // Small delay to ensure clean transition
+        } catch (error) {
+          console.error("Error restarting speech recognition:", error);
+        }
+      }
     };
     
     // Fix for some browsers where speech can sometimes fail silently
     utterance.onerror = (event) => {
       console.error("Speech synthesis error:", event);
       setInterviewerSpeaking(false);
+      
+      // Ensure microphone is re-enabled if there's an error
+      if (streamRef.current) {
+        streamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = true;
+        });
+      }
+      
+      // Restart speech recognition on error
+      if (speechRecognitionRef.current && isRecording) {
+        try {
+          setTimeout(() => {
+            speechRecognitionRef.current?.start();
+          }, 300);
+        } catch (error) {
+          console.error("Error restarting speech recognition after synthesis error:", error);
+        }
+      }
     };
     
     speechSynthesisRef.current = utterance;
@@ -849,7 +892,7 @@ export function VideoInterviewSimulator({
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="text-sm font-medium mb-1 flex justify-between">
               <span>Live Transcript:</span>
-              <span className="text-xs text-gray-500 italic">Responses auto-submit after you pause speaking</span>
+              <span className="text-xs text-gray-500 italic">Your responses are submitted automatically</span>
             </div>
             <div className="text-gray-700">{userTranscript}</div>
           </div>
@@ -859,7 +902,7 @@ export function VideoInterviewSimulator({
           <textarea
             className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             rows={3}
-            placeholder="Type your answer (or just speak)..."
+            placeholder="Speak your answer..."
             value={currentAnswer}
             onChange={(e) => setCurrentAnswer(e.target.value)}
             onKeyDown={handleKeyPress}
@@ -892,7 +935,6 @@ export function VideoInterviewSimulator({
               >
                 End Interview
               </Button>
-              {/* Manual submission button removed as requested */}
             </div>
           </div>
         </div>
