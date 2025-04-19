@@ -30,8 +30,12 @@ import {
 } from '../shared/schema';
 
 import { IStorage } from './storage';
+import mongoose from 'mongoose';
 
 export class MongoStorage implements IStorage {
+  getUserByProvider(provider: string, providerId: string): Promise<User | undefined> {
+    throw new Error('Method not implemented.');
+  }
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     try {
@@ -114,12 +118,24 @@ export class MongoStorage implements IStorage {
   }
   
   // Resume Template methods
-  async getResumeTemplate(id: number): Promise<ResumeTemplate | undefined> {
+  async getResumeTemplate(id: number | string): Promise<ResumeTemplate | undefined> {
     try {
-      const template = await ResumeTemplateModel.findById(id);
-      if (!template) return undefined;
+      // Try to find by direct ID first (for MongoDB ObjectIds)
+      try {
+        const template = await ResumeTemplateModel.findById(String(id));
+        if (template) return this.convertMongoResumeTemplateToSchemaResumeTemplate(template);
+      } catch (idError) {
+        console.log(`Template not found with direct ID lookup: ${id}`, idError);
+      }
       
-      return this.convertMongoResumeTemplateToSchemaResumeTemplate(template);
+      // Try to find by numeric ID (backward compatibility)
+      if (typeof id === 'number' || !isNaN(Number(id))) {
+        const numericId = Number(id);
+        const templateByNumericId = await ResumeTemplateModel.findOne({ id: numericId });
+        if (templateByNumericId) return this.convertMongoResumeTemplateToSchemaResumeTemplate(templateByNumericId);
+      }
+      
+      return undefined;
     } catch (error) {
       console.error('Error getting resume template:', error);
       return undefined;
@@ -128,13 +144,9 @@ export class MongoStorage implements IStorage {
   
   async getResumeTemplates(category?: string): Promise<ResumeTemplate[]> {
     try {
-      let query = {};
-      if (category) {
-        query = { category };
-      }
-      
+      let query = category ? { category } : {};
       const templates = await ResumeTemplateModel.find(query);
-      return templates.map(template => this.convertMongoResumeTemplateToSchemaResumeTemplate(template));
+      return templates.map(t => this.convertMongoResumeTemplateToSchemaResumeTemplate(t));
     } catch (error) {
       console.error('Error getting resume templates:', error);
       return [];
@@ -214,9 +226,18 @@ export class MongoStorage implements IStorage {
 
   async updateResume(id: number | string, data: Partial<Resume>): Promise<Resume | undefined> {
     try {
-      const resume = await ResumeModel.findByIdAndUpdate(String(id), data, { new: true });
-      if (!resume) return undefined;
+      console.log('Updating resume with ID:', id, 'Data:', data);
+      const resume = await ResumeModel.findByIdAndUpdate(
+        String(id),
+        { $set: data },
+        { new: true }
+      );
+      if (!resume) {
+        console.log('No resume found with ID:', id);
+        return undefined;
+      }
       
+      console.log('Resume updated successfully:', resume);
       return this.convertMongoResumeToSchemaResume(resume);
     } catch (error) {
       console.error('Error updating resume:', error);
@@ -322,6 +343,11 @@ export class MongoStorage implements IStorage {
 
   async createInterviewQuestion(insertQuestion: InsertInterviewQuestion): Promise<InterviewQuestion> {
     try {
+      // Ensure userId is a valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(insertQuestion.userId)) {
+        insertQuestion.userId = new mongoose.Types.ObjectId().toString();
+      }
+      
       const question = new InterviewQuestionModel(insertQuestion);
       const savedQuestion = await question.save();
       
@@ -389,6 +415,16 @@ export class MongoStorage implements IStorage {
     } catch (error) {
       console.error('Error updating mock interview:', error);
       return undefined;
+    }
+  }
+
+  async deleteMockInterview(id: number | string): Promise<boolean> {
+    try {
+      const result = await MockInterviewModel.findByIdAndDelete(String(id));
+      return !!result;
+    } catch (error) {
+      console.error('Error deleting mock interview:', error);
+      return false;
     }
   }
 
@@ -477,7 +513,7 @@ export class MongoStorage implements IStorage {
   private convertMongoUserToSchemaUser(user: any): User {
     return {
       id: user._id.toString(),
-      username: user.username,
+      // username: user.username,
       email: user.email,
       password: user.password,
       firstName: user.firstName,
@@ -486,7 +522,9 @@ export class MongoStorage implements IStorage {
       plan: user.plan,
       profilePicture: user.profilePicture,
       createdAt: user.createdAt,
-      mockInterviewsCount: user.mockInterviewsCount || 0
+      mockInterviewsCount: user.mockInterviewsCount || 0,
+      provider: user.provider || null,
+      providerId: user.providerId || null
     };
   }
   

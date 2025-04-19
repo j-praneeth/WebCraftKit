@@ -18,7 +18,7 @@ type AuthContextType = {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   register: (userData: any) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -54,17 +54,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (username: string, password: string) => {
+  const login = async (email: string, password: string) => {
+    // const login = async (username: string, password: string) => {
     try {
       setIsLoading(true);
-      const response = await apiRequest("POST", "/api/auth/login", { username, password });
+      // const response = await apiRequest("POST", "/api/auth/login", { username, password });
+      const response = await apiRequest("POST", "/api/auth/login", { email, password });
       
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
         toast({
           title: "Login successful",
-          description: `Welcome back, ${userData.firstName || userData.username}!`,
+          description: `Welcome back, ${userData.firstName || userData.email}!`,
         });
       } else {
         throw new Error("Login failed");
@@ -72,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       toast({
         title: "Login failed",
-        description: error.message || "Invalid username or password",
+        description: error instanceof Error ? error.message : "Invalid email or password",
         variant: "destructive",
       });
       throw error;
@@ -89,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const newUser = await response.json();
         // Login automatically after successful registration
-        await login(userData.username, userData.password);
+        await login(userData.email, userData.password);
         toast({
           title: "Registration successful",
           description: "Your account has been created!",
@@ -101,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       toast({
         title: "Registration failed",
-        description: error.message || "Could not create account",
+        description: error instanceof Error ? error.message : "Could not create account",
         variant: "destructive",
       });
       throw error;

@@ -10,7 +10,8 @@ function Login() {
   const [location, navigate] = useLocation();
   const { login, isLoading } = useAuth();
   const [formData, setFormData] = useState({
-    username: "",
+    email:"",
+    // username: "",
     password: "",
   });
 
@@ -23,7 +24,7 @@ function Login() {
     e.preventDefault();
     
     try {
-      await login(formData.username, formData.password);
+      await login(formData.email, formData.password);
       navigate("/dashboard");
     } catch (error) {
       // Error is handled by the login function in auth-context
@@ -77,13 +78,13 @@ function Login() {
           <form onSubmit={handleSubmit}>
             <CardContent className="pt-6 space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
-                  id="username"
-                  name="username"
-                  value={formData.username}
+                  id="email"
+                  name="email"
+                  value={formData.email}
                   onChange={handleInputChange}
-                  placeholder="Enter your username"
+                  placeholder="Enter your email"
                   required
                 />
               </div>

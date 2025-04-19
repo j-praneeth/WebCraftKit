@@ -7,25 +7,28 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { ResumeTemplate } from "@shared/schema";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { templates, getTemplatesByPlan, TemplateDefinition } from "@/lib/templates";
 
 function NewResume() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [resumeTitle, setResumeTitle] = useState("");
-  const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<keyof typeof templates | null>(null);
   
-  // Fetch resume templates
-  const { 
-    data: templates,
-    isLoading 
-  } = useQuery<ResumeTemplate[]>({
-    queryKey: ["/api/resume-templates"],
-    enabled: !!user,
-  });
+  // Get templates based on user's plan
+  const availableTemplates = getTemplatesByPlan((user?.plan as 'free' | 'professional' | 'enterprise') || 'free');
+  
+  // Filter templates by category
+  const freeTemplates = availableTemplates.filter(template => template.category === 'free');
+  const professionalTemplates = availableTemplates.filter(template => template.category === 'professional');
+  const enterpriseTemplates = availableTemplates.filter(template => template.category === 'enterprise');
+  
+  // Check if user has access to professional/enterprise templates
+  const hasProfessionalAccess = user?.plan === 'professional' || user?.plan === 'enterprise';
+  const hasEnterpriseAccess = user?.plan === 'enterprise';
 
   // Create new resume mutation
   const createResumeMutation = useMutation({
@@ -78,13 +81,6 @@ function NewResume() {
     createResumeMutation.mutate();
   };
 
-  // Filter templates by category
-  const freeTemplates = templates?.filter(template => template.category === 'free') || [];
-  const premiumTemplates = templates?.filter(template => template.category === 'premium') || [];
-  
-  // Check if user has access to premium templates
-  const hasPremiumAccess = user?.plan !== 'free';
-
   return (
     <DashboardLayout>
       <div className="mb-8">
@@ -127,62 +123,58 @@ function NewResume() {
             <CardDescription>Select a template for your resume</CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {/* Free Templates */}
-                <div>
-                  <h3 className="text-lg font-medium mb-4">Free Templates</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {freeTemplates.map((template) => (
-                      <div
-                        key={template.id}
-                        className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                          selectedTemplate === template.id
-                            ? "border-primary-500 ring-2 ring-primary-200"
-                            : "border-gray-200 hover:border-primary-300"
-                        }`}
-                        onClick={() => setSelectedTemplate(template.id)}
-                      >
-                        <div className="aspect-w-16 aspect-h-9 mb-3">
-                          {template.previewImage ? (
-                            <img
-                              src={template.previewImage}
-                              alt={template.name}
-                              className="object-cover rounded"
-                            />
-                          ) : (
-                            <div className="bg-gray-100 rounded flex items-center justify-center">
-                              <span className="text-gray-400">{template.name}</span>
-                            </div>
-                          )}
-                        </div>
-                        <h4 className="font-medium">{template.name}</h4>
-                        <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+            <div className="space-y-8">
+              {/* Free Templates */}
+              <div>
+                <h3 className="text-lg font-medium mb-4">Free Templates</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {freeTemplates.map((template) => (
+                    <div
+                      key={template.id}
+                      className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                        selectedTemplate === template.id
+                          ? "border-primary-500 ring-2 ring-primary-200"
+                          : "border-gray-200 hover:border-primary-300"
+                      }`}
+                      onClick={() => setSelectedTemplate(template.id as keyof typeof templates)}
+                    >
+                      <div className="aspect-w-16 aspect-h-9 mb-3">
+                        {template.previewImage ? (
+                          <img
+                            src={template.previewImage}
+                            alt={template.name}
+                            className="object-cover rounded"
+                          />
+                        ) : (
+                          <div className="bg-gray-100 rounded flex items-center justify-center">
+                            <span className="text-gray-400">{template.name}</span>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                      <h4 className="font-medium">{template.name}</h4>
+                      <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+                    </div>
+                  ))}
                 </div>
+              </div>
 
-                {/* Premium Templates */}
+              {/* Professional Templates */}
+              {professionalTemplates.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-medium">Premium Templates</h3>
-                    {!hasPremiumAccess && (
+                    <h3 className="text-lg font-medium">Professional Templates</h3>
+                    {!hasProfessionalAccess && (
                       <Button variant="outline" size="sm" onClick={() => navigate("/settings")}>
-                        Upgrade
+                        Upgrade to Professional
                       </Button>
                     )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {premiumTemplates.map((template) => (
+                    {professionalTemplates.map((template) => (
                       <div
                         key={template.id}
                         className={`border rounded-lg p-4 relative ${
-                          !hasPremiumAccess
+                          !hasProfessionalAccess
                             ? "opacity-70 cursor-not-allowed"
                             : "cursor-pointer hover:border-primary-300"
                         } ${
@@ -191,19 +183,19 @@ function NewResume() {
                             : "border-gray-200"
                         }`}
                         onClick={() => {
-                          if (hasPremiumAccess) {
-                            setSelectedTemplate(template.id);
+                          if (hasProfessionalAccess) {
+                            setSelectedTemplate(template.id as keyof typeof templates);
                           } else {
                             toast({
-                              title: "Premium Feature",
-                              description: "Upgrade your plan to access premium templates.",
+                              title: "Professional Feature",
+                              description: "Upgrade to Professional plan to access these templates.",
                             });
                           }
                         }}
                       >
-                        {!hasPremiumAccess && (
+                        {!hasProfessionalAccess && (
                           <div className="absolute top-2 right-2 bg-amber-500 text-white text-xs px-2 py-1 rounded-full">
-                            Premium
+                            Professional
                           </div>
                         )}
                         <div className="aspect-w-16 aspect-h-9 mb-3">
@@ -225,8 +217,69 @@ function NewResume() {
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+
+              {/* Enterprise Templates */}
+              {enterpriseTemplates.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium">Enterprise Templates</h3>
+                    {!hasEnterpriseAccess && (
+                      <Button variant="outline" size="sm" onClick={() => navigate("/settings")}>
+                        Upgrade to Enterprise
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {enterpriseTemplates.map((template) => (
+                      <div
+                        key={template.id}
+                        className={`border rounded-lg p-4 relative ${
+                          !hasEnterpriseAccess
+                            ? "opacity-70 cursor-not-allowed"
+                            : "cursor-pointer hover:border-primary-300"
+                        } ${
+                          selectedTemplate === template.id
+                            ? "border-primary-500 ring-2 ring-primary-200"
+                            : "border-gray-200"
+                        }`}
+                        onClick={() => {
+                          if (hasEnterpriseAccess) {
+                            setSelectedTemplate(template.id as keyof typeof templates);
+                          } else {
+                            toast({
+                              title: "Enterprise Feature",
+                              description: "Upgrade to Enterprise plan to access these templates.",
+                            });
+                          }
+                        }}
+                      >
+                        {!hasEnterpriseAccess && (
+                          <div className="absolute top-2 right-2 bg-amber-500 text-white text-xs px-2 py-1 rounded-full">
+                            Enterprise
+                          </div>
+                        )}
+                        <div className="aspect-w-16 aspect-h-9 mb-3">
+                          {template.previewImage ? (
+                            <img
+                              src={template.previewImage}
+                              alt={template.name}
+                              className="object-cover rounded"
+                            />
+                          ) : (
+                            <div className="bg-gray-100 rounded flex items-center justify-center">
+                              <span className="text-gray-400">{template.name}</span>
+                            </div>
+                          )}
+                        </div>
+                        <h4 className="font-medium">{template.name}</h4>
+                        <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
           <CardFooter className="flex justify-between">
             <Button variant="outline" onClick={() => navigate("/resume-builder")}>

@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { log } from './vite';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const MONGODB_URI = "mongodb+srv://praneethjanjanam:UiOyhKRP1fHOXUSd@ams.tvfb5.mongodb.net/";
+const MONGODB_URI = process.env.MONGODB_URI || "";
 
 // Models
 const userSchema = new mongoose.Schema({
@@ -27,6 +29,26 @@ const resumeSchema = new mongoose.Schema({
   lastUpdated: { type: Date, default: Date.now },
   isOptimized: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
+}, { timestamps: { updatedAt: 'lastUpdated' } });
+
+// Pre-save middleware to ensure content is properly structured
+resumeSchema.pre('save', function(next) {
+  // Ensure content is an object
+  if (typeof this.content !== 'object') {
+    this.content = {};
+  }
+  
+  // Set lastUpdated
+  this.lastUpdated = new Date();
+  
+  next();
+});
+
+// Pre-update middleware
+resumeSchema.pre(['updateOne', 'findOneAndUpdate'], function(next) {
+  // Set lastUpdated on update
+  this.set({ lastUpdated: new Date() });
+  next();
 });
 
 const coverLetterSchema = new mongoose.Schema({

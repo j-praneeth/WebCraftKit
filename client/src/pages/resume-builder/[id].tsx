@@ -15,12 +15,54 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { optimizeResume } from "@/lib/openai";
+import { templates, getTemplatesByPlan } from "@/lib/templates";
+import { TemplateRenderer } from "@/components/resume/template-renderer";
 
-interface ResumeSection {
-  id: string;
+interface ResumeContent {
+  personalInfo?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    location?: string;
+    website?: string;
+    summary?: string;
+  };
+  experience?: Array<{
+    company: string;
+    position: string;
+    location?: string;
+    startDate: string;
+    endDate?: string;
+    description: string;
+  }>;
+  education?: Array<{
+    institution: string;
+    degree: string;
+    field?: string;
+    location?: string;
+    startDate: string;
+    endDate?: string;
+    description?: string;
+  }>;
+  skills?: string[];
+  certifications?: Array<{
+    name: string;
+    issuer?: string;
+    date?: string;
+    description?: string;
+  }>;
+  projects?: Array<{
+    name: string;
+    description: string;
+    url?: string;
+    technologies?: string[];
+  }>;
+}
+
+interface ResumeData {
   title: string;
-  content: any;
-  type: "text" | "list" | "contact" | "skills" | "education" | "experience";
+  content: ResumeContent;
+  jobDescription?: string;
 }
 
 function ResumeEditor() {
@@ -150,41 +192,104 @@ function ResumeEditor() {
     enabled: !!user && !!id && id !== "new",
   });
 
-  // Fetch template data if we have a templateId
-  const {
-    data: template,
-    isLoading: isLoadingTemplate,
-  } = useQuery<ResumeTemplate>({
-    queryKey: [`/api/resume-templates/${resume?.templateId}`],
-    enabled: !!resume?.templateId,
-  });
+  // Get template data from local templates
+  const template = resume?.templateId ? templates[resume.templateId as keyof typeof templates] || templates.modern : templates.modern;
 
   // Update resume mutation
   const updateResumeMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest(
+    mutationFn: async (data?: { templateId?: string }) => {
+      let updatedData;
+      
+      if (data?.templateId) {
+        // If only updating template
+        updatedData = {
+          ...resume,
+          templateId: data.templateId
+        };
+      } else {
+        // If updating content
+        const content = {
+          personalInfo: resumeData.content.personalInfo || {},
+          experience: resumeData.content.experience || [],
+          education: resumeData.content.education || [],
+          skills: resumeData.content.skills || [],
+          certifications: resumeData.content.certifications || [],
+          projects: resumeData.content.projects || []
+        };
+
+        updatedData = {
+          title: resumeData.title,
+          content,
+          templateId: resume?.templateId,
+          atsScore: resume?.atsScore,
+          isOptimized: resume?.isOptimized
+        };
+      }
+
+      const response = await apiRequest(
         "PATCH",
         `/api/resumes/${id}`,
-        {
-          title: resumeData.title,
-          content: resumeData.content,
-        }
+        updatedData
       );
+
+      return response.json();
     },
-    onSuccess: () => {
+    onMutate: async () => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/resumes/${id}`] });
+      await queryClient.cancelQueries({ queryKey: ["/api/resumes"] });
+
+      // Snapshot the previous value
+      const previousResume = queryClient.getQueryData([`/api/resumes/${id}`]);
+
+      // Optimistically update the cache
+      const optimisticResume = {
+        ...resume,
+        title: resumeData.title,
+        content: resumeData.content,
+      };
+
+      queryClient.setQueryData([`/api/resumes/${id}`], optimisticResume);
+      queryClient.setQueryData(["/api/resumes"], (old: any[]) => {
+        return old?.map(r => r.id === id ? optimisticResume : r) ?? [];
+      });
+
+      return { previousResume };
+    },
+    onSuccess: async (updatedResume) => {
+      // Update cache with the actual server response
+      queryClient.setQueryData([`/api/resumes/${id}`], updatedResume);
+      queryClient.setQueryData(["/api/resumes"], (old: any[]) => {
+        return old?.map(r => r.id === id ? updatedResume : r) ?? [];
+      });
+
       toast({
         title: "Resume saved",
         description: "Your resume has been saved successfully.",
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/resumes/${id}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
     },
-    onError: (error: any) => {
+    onError: (error: any, _, context: any) => {
+      // Rollback on error
+      if (context?.previousResume) {
+        queryClient.setQueryData([`/api/resumes/${id}`], context.previousResume);
+      }
       toast({
         title: "Error",
         description: error.message || "Failed to save resume. Please try again.",
         variant: "destructive",
       });
+    },
+    onSettled: async () => {
+      // Always refetch after error or success to ensure cache is in sync
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/resumes/${id}`] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/resumes"] }),
+      ]);
+      // Force an immediate refetch
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: [`/api/resumes/${id}`] }),
+        queryClient.refetchQueries({ queryKey: ["/api/resumes"] }),
+      ]);
     },
   });
   
@@ -197,8 +302,23 @@ function ResumeEditor() {
       }
       
       try {
-        const result = await optimizeResume(resumeData.content, resumeData.jobDescription);
-        return result;
+        // First get the optimization result
+        const optimizationResult = await optimizeResume(resumeData.content, resumeData.jobDescription);
+        
+        // Then update the resume with the optimized content
+        const response = await apiRequest(
+          "PATCH",
+          `/api/resumes/${id}`,
+          {
+            title: resumeData.title,
+            content: optimizationResult.optimizedContent || resumeData.content,
+            atsScore: optimizationResult.score,
+            isOptimized: true,
+          }
+        );
+        
+        const updatedResume = await response.json();
+        return { ...optimizationResult, updatedResume };
       } catch (error) {
         console.error("Error optimizing resume:", error);
         throw new Error("Failed to optimize resume. Please try again.");
@@ -206,8 +326,25 @@ function ResumeEditor() {
         setIsOptimizing(false);
       }
     },
+    onMutate: async () => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: [`/api/resumes/${id}`] });
+      await queryClient.cancelQueries({ queryKey: ["/api/resumes"] });
+
+      // Snapshot the previous values
+      const previousResume = queryClient.getQueryData([`/api/resumes/${id}`]);
+      const previousTips = optimizationTips;
+
+      return { previousResume, previousTips };
+    },
     onSuccess: (data) => {
-      // Update the resume with optimized content
+      // Update cache with the actual server response
+      queryClient.setQueryData([`/api/resumes/${id}`], data.updatedResume);
+      queryClient.setQueryData(["/api/resumes"], (old: any[]) => {
+        return old?.map(r => r.id === id ? data.updatedResume : r) ?? [];
+      });
+
+      // Update local state
       setResumeData(prev => ({
         ...prev,
         content: data.optimizedContent || prev.content,
@@ -216,45 +353,61 @@ function ResumeEditor() {
       // Set optimization tips
       setOptimizationTips(data.tips || []);
       
-      // Save the changes to the server with updated ATS score
-      apiRequest(
-        "PATCH",
-        `/api/resumes/${id}`,
-        {
-          title: resumeData.title,
-          content: data.optimizedContent || resumeData.content,
-          atsScore: data.score,
-          isOptimized: true,
-        }
-      ).then(() => {
-        queryClient.invalidateQueries({ queryKey: [`/api/resumes/${id}`] });
-        queryClient.invalidateQueries({ queryKey: ["/api/resumes"] });
-      });
-      
       toast({
         title: "Resume optimized",
         description: `Your resume has been optimized with an ATS score of ${data.score}%.`,
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _, context: any) => {
+      // Rollback on error
+      if (context?.previousResume) {
+        queryClient.setQueryData([`/api/resumes/${id}`], context.previousResume);
+      }
+      setOptimizationTips(context?.previousTips || []);
+      
       toast({
         title: "Optimization error",
         description: error.message || "Failed to optimize resume. Please try again.",
         variant: "destructive",
       });
     },
+    onSettled: async () => {
+      // Always refetch after error or success to ensure cache is in sync
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/resumes/${id}`] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/resumes"] }),
+      ]);
+      // Force an immediate refetch
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: [`/api/resumes/${id}`] }),
+        queryClient.refetchQueries({ queryKey: ["/api/resumes"] }),
+      ]);
+    }
   });
 
   // Initialize resume data from API
   useEffect(() => {
     if (resume && !isLoadingResume) {
+      const content = resume.content as ResumeContent;
       setResumeData({
         title: resume.title,
-        content: resume.content || {
-          personalInfo: { name: "", email: "", phone: "", location: "", website: "", summary: "" },
-          experience: [{ company: "", position: "", location: "", startDate: "", endDate: "", description: "" }],
-          education: [{ institution: "", degree: "", field: "", location: "", startDate: "", endDate: "" }],
-          skills: [""],
+        content: {
+          personalInfo: content?.personalInfo || {
+            name: "", email: "", phone: "", location: "", website: "", summary: ""
+          },
+          experience: content?.experience || [{
+            company: "", position: "", location: "", startDate: "", endDate: "", description: ""
+          }],
+          education: content?.education || [{
+            institution: "", degree: "", field: "", location: "", startDate: "", endDate: ""
+          }],
+          skills: content?.skills || [""],
+          certifications: content?.certifications || [{
+            name: "", issuer: "", date: "", description: ""
+          }],
+          projects: content?.projects || [{
+            name: "", description: "", url: "", technologies: [""]
+          }]
         },
         jobDescription: "",
       });
@@ -263,7 +416,7 @@ function ResumeEditor() {
 
   // Handle saving the resume
   const handleSaveResume = () => {
-    updateResumeMutation.mutate();
+    updateResumeMutation.mutate({});
   };
 
   // Handle optimizing the resume
@@ -373,19 +526,110 @@ function ResumeEditor() {
           </p>
         </div>
         <div className="flex space-x-2">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => navigate("/resume-builder")}
           >
             Cancel
           </Button>
-          <Button 
-            onClick={handleSaveResume} 
+          <Button
+            onClick={handleSaveResume}
             disabled={updateResumeMutation.isPending}
           >
             {updateResumeMutation.isPending ? "Saving..." : "Save Resume"}
           </Button>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              try {
+                const { generatePDF } = await import('@/lib/pdf-generator');
+                await generatePDF('resume-preview', `${resumeData.title || 'resume'}.pdf`);
+              } catch (error) {
+                toast({
+                  title: "Error",
+                  description: "Failed to generate PDF. Please try again.",
+                  variant: "destructive",
+                });
+              }
+            }}
+            disabled={!id || id === "new"}
+          >
+            Download PDF
+          </Button>
         </div>
+      </div>
+
+      {/* Template Selection */}
+      <div className="mb-6">
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-lg font-medium mb-4">Template Selection</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {getTemplatesByPlan((user?.plan as 'free' | 'professional' | 'enterprise') || 'free').map((template) => (
+                <div
+                  key={template.id}
+                  className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                    resume?.templateId === template.id
+                      ? 'border-primary-500 shadow-lg'
+                      : 'border-gray-200 hover:border-primary-300'
+                  }`}
+                  onClick={() => {
+                    if (resume?.templateId !== template.id) {
+                      updateResumeMutation.mutate({
+                        ...resumeData,
+                        templateId: template.id,
+                      });
+                    }
+                  }}
+                >
+                  <img
+                    src={template.previewImage}
+                    alt={template.name}
+                    className="w-full aspect-[8.5/11] object-cover"
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
+                    <h4 className="text-white font-medium">{template.name}</h4>
+                    <p className="text-white/80 text-sm">{template.description}</p>
+                  </div>
+                  {template.category !== 'free' && user?.plan === 'free' && (
+                    <div className="absolute top-2 right-2 bg-primary-500 text-white text-xs px-2 py-1 rounded">
+                      Premium
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Resume Preview */}
+      <div id="resume-preview" className="mb-6">
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-lg font-medium mb-4">Resume Preview</h3>
+            <div className="border rounded-lg overflow-hidden">
+              {/* Template Preview */}
+              <div className="relative">
+                {isLoadingResume ? (
+                  <div className="flex justify-center items-center h-[600px] bg-gray-50 rounded">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+                  </div>
+                ) : resumeData ? (
+                  <TemplateRenderer
+                    template={templates[resume?.templateId as keyof typeof templates] || templates.modern}
+                    resume={resumeData as Resume}
+                    scale={0.7}
+                  />
+                ) : (
+                  <div className="flex justify-center items-center h-[600px] bg-gray-50 rounded">
+                    <p className="text-gray-500">No resume data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -7,9 +7,10 @@ interface ResumeCardProps {
   resume: Resume;
   onEdit: (id: number | string) => void;
   onDownload: (id: number | string) => void;
+  onDelete: (id: number | string) => void;
 }
 
-export function ResumeCard({ resume, onEdit, onDownload }: ResumeCardProps) {
+export function ResumeCard({ resume, onEdit, onDownload, onDelete }: ResumeCardProps) {
   const lastUpdated = resume.lastUpdated 
     ? formatDistanceToNow(new Date(resume.lastUpdated), { addSuffix: true })
     : 'Unknown';
@@ -31,15 +32,27 @@ export function ResumeCard({ resume, onEdit, onDownload }: ResumeCardProps) {
             <p className="text-sm text-gray-500 mt-1">Last updated: {lastUpdated}</p>
           </div>
           <div className="flex items-center space-x-2">
-            {resume.isOptimized ? (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                ATS Optimized
-              </span>
-            ) : (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                Needs Review
-              </span>
-            )}
+            <div className="flex items-center space-x-2">
+              {resume.isOptimized ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  ATS Optimized
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                  Needs Review
+                </span>
+              )}
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(resume.id);
+              }}
+              className="text-gray-400 hover:text-red-500 transition-colors"
+              title="Delete Resume"
+            >
+              <i className="ri-delete-bin-line"></i>
+            </button>
           </div>
         </div>
         

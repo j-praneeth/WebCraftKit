@@ -1,5 +1,7 @@
-import express, { type Express, Request, Response } from "express";
-import { createServer, type Server } from "http";
+import express from "express";
+import type { Express, Request, Response } from "express";
+import { createServer } from "http";
+import type { Server as HttpServer } from "http";
 import { storage } from "./storage";
 import { connectDB } from "./db";
 import { insertUserSchema, insertResumeSchema, insertCoverLetterSchema, insertInterviewQuestionSchema, insertResumeTemplateSchema, insertMockInterviewSchema } from "@shared/schema";
@@ -7,11 +9,114 @@ import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import MemoryStore from "memorystore";
-import OpenAI from "openai";
+import { genAI, MODEL_CONFIG, handleApiError } from './config/ai-config';
 import { WebSocketServer, WebSocket } from 'ws';
 import { sendInterviewFeedback, sendInterviewQuestions } from "./email";
+import { type User } from "@shared/schema";
+// import interviewQuestionsRouter from './api/interview-questions';
+import interviewQuestionsRouter from './api/gemini-questions';
+import type { GenerateContentResult } from '@google/generative-ai';
+import { HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import mongoose from 'mongoose';
+import type { RequestInit } from 'node-fetch';
 
-export async function registerRoutes(app: Express): Promise<Server> {
+interface ExtendedRequestInit extends RequestInit {
+  timeout?: number;
+}
+
+// Define WebSocket message types
+type WebSocketMessage = {
+  type: 'start' | 'answer' | 'end' | 'error' | 'question' | 'follow_up';
+  content?: string;
+  sessionId?: string;
+  message?: string;
+};
+
+interface InterviewAnalysisResult {
+  score: number;
+  feedback: {
+    strengths: string[];
+    improvements: string[];
+    overall: string;
+  };
+  followupQuestions: string[];
+}
+
+// Helper function to clean and parse JSON response
+function cleanAndParseJSON(response: string): any {
+  try {
+    // First, try to parse the response directly
+    try {
+      return JSON.parse(response);
+    } catch (e) {
+      // If direct parsing fails, try to clean the response
+      let cleanResponse = response.trim();
+
+      // Remove any markdown code block markers
+      cleanResponse = cleanResponse.replace(/```(?:json)?\s*|\s*```$/g, '');
+
+      // Remove any potential BOM or special characters
+      cleanResponse = cleanResponse.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+
+      // Ensure the response starts with a valid JSON object
+      if (!cleanResponse.startsWith('{')) {
+        cleanResponse = `{${cleanResponse}`;
+      }
+
+      // Ensure the response ends with a valid JSON object
+      if (!cleanResponse.endsWith('}')) {
+        cleanResponse = `${cleanResponse}}`;
+      }
+
+      // Remove any trailing commas
+      cleanResponse = cleanResponse.replace(/,(\s*[}\]])/g, '$1');
+
+      // Handle potential unescaped quotes
+      cleanResponse = cleanResponse.replace(/([^\\])"/g, '$1\\"');
+
+      // Try to find JSON content within the response
+      const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanResponse = jsonMatch[0];
+      }
+
+      // Try parsing the cleaned response
+      const parsed = JSON.parse(cleanResponse);
+
+      // Validate required fields
+      if (!parsed.question && !parsed.skills) {
+        throw new Error('Missing required fields: question or skills');
+      }
+
+      return parsed;
+    }
+  } catch (error) {
+    console.error('JSON parsing error:', error);
+    console.error('Raw response:', response);
+    
+    // Try to recover by creating a basic question
+    try {
+      // Extract any text that might be a question
+      const questionMatch = response.match(/[^.!?]+[.!?]+/);
+      if (questionMatch) {
+        return {
+          question: questionMatch[0].trim(),
+          skills: []
+        };
+      }
+    } catch (recoveryError) {
+      console.error('Recovery attempt failed:', recoveryError);
+    }
+    
+    // If all else fails, return a default question
+    return {
+      question: "Could you tell me about your experience in this field?",
+      skills: []
+    };
+  }
+}
+
+export async function registerRoutes(app: Express): Promise<HttpServer> {
   // Connect to MongoDB
   try {
     await connectDB();
@@ -26,11 +131,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const staticMiddleware = express.static('public/templates');
   app.use('/templates', staticMiddleware);
 
-  // Initialize OpenAI with API key from environment
-  const openai = new OpenAI({ 
-    apiKey: process.env.OPENAI_API_KEY 
-  });
+  // Initialize Gemini API
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("Gemini API key is not configured");
+    process.exit(1);
+  }
   
+  // Register API routes
+  app.use('/api', interviewQuestionsRouter);
+
   // Setup session
   const SessionStore = MemoryStore(session);
   app.use(
@@ -47,13 +156,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  
   // Configure passport
   passport.use(
-    new LocalStrategy(async (username, password, done) => {
+    new LocalStrategy(
+      {
+        usernameField: 'email',
+        passwordField: 'password'
+      },
+      async (email, password, done) => {
       try {
-        const user = await storage.getUserByUsername(username);
+        const user = await storage.getUserByEmail(email) as User | null;
         if (!user) {
-          return done(null, false, { message: "Incorrect username" });
+          return done(null, false, { message: "Incorrect email" });
         }
         
         // In a production app, we would use bcrypt to check the password
@@ -68,11 +183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     })
   );
 
-  passport.serializeUser((user: any, done) => {
-    done(null, user.id);
+  passport.serializeUser((user: Express.User, done) => {
+    done(null, (user as User).id);
   });
 
-  passport.deserializeUser(async (id: number, done) => {
+  passport.deserializeUser(async (id: string | number, done) => {
     try {
       const user = await storage.getUser(id);
       done(null, user);
@@ -95,7 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUser = await storage.getUserByUsername(userData.username);
+      const existingUser = await storage.getUserByUsername(userData.email);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
@@ -119,7 +234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", passport.authenticate("local"), (req, res) => {
     // Remove password from response
-    const { password, ...userWithoutPassword } = req.user as any;
+    const { password, ...userWithoutPassword } = req.user as User;
     res.json(userWithoutPassword);
   });
 
@@ -138,13 +253,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // Remove password from response
-    const { password, ...userWithoutPassword } = req.user as any;
+    const { password, ...userWithoutPassword } = req.user as User;
     res.json(userWithoutPassword);
   });
 
   // Resume routes
   app.get("/api/resumes", isAuthenticated, async (req, res) => {
-    const userId = (req.user as any).id;
+    const userId = (req.user as User).id;
     const resumes = await storage.getResumesByUserId(userId);
     res.json(resumes);
   });
@@ -193,9 +308,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Forbidden" });
       }
       
-      // Import PDFKit and generate the PDF
-      const PDFDocument = require('pdfkit');
-      const doc = new PDFDocument({ margin: 50 });
+      // Import PDFKit dynamically since we're in ESM context
+      const PDFKit = await import('pdfkit');
+      const doc = new PDFKit.default({ margin: 50 });
       
       // Set response headers for PDF download
       res.setHeader('Content-Type', 'application/pdf');
@@ -208,7 +323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let template = null;
       if (resume.templateId) {
         try {
-          template = await storage.getResumeTemplate(Number(resume.templateId));
+          template = await storage.getResumeTemplate(resume.templateId);
         } catch (err) {
           console.log(`Could not load template: ${err}`);
         }
@@ -234,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Add personal info
       if (content.personalInfo) {
-        const { name, email, phone, address } = content.personalInfo;
+        const { name, email, phone, location, website, summary } = content.personalInfo;
         try {
           doc.font('Helvetica-Bold').fontSize(14).fillColor('black');
         } catch (err) {
@@ -244,8 +359,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         doc.font('Helvetica').fontSize(10).fillColor('#444444');
         if (email) doc.text(email);
         if (phone) doc.text(phone);
-        if (address) doc.text(address);
+        if (location) doc.text(location);
+        if (website) doc.text(website);
         doc.moveDown();
+
+        // Add summary if exists
+        if (summary) {
+          doc.font('Helvetica-Bold').fontSize(12).fillColor(primaryColor);
+          doc.text('Professional Summary');
+          doc.moveDown(0.5);
+          doc.font('Helvetica').fontSize(10).fillColor('#444444');
+          doc.text(summary);
+          doc.moveDown();
+        }
       }
       
       // Add experience section
@@ -270,7 +396,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } catch (err) {
             doc.font('Helvetica').fontSize(10);
           }
-          doc.text(`${exp.title || ''} (${exp.startDate || ''} - ${exp.endDate || 'Present'})`);
+          doc.text(`${exp.position || ''}`);
+          if (exp.location) {
+            doc.text(exp.location);
+          }
+          doc.text(`${exp.startDate || ''} - ${exp.endDate || 'Present'}`);
           doc.font('Helvetica').fontSize(10).fillColor('#444444');
           doc.text(exp.description || '');
           doc.moveDown();
@@ -295,7 +425,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           doc.text(edu.institution || '');
           doc.font('Helvetica').fontSize(10).fillColor('#444444');
-          doc.text(`${edu.degree || ''} (${edu.year || ''})`);
+          doc.text(`${edu.degree || ''}${edu.field ? ` in ${edu.field}` : ''}`);
+          if (edu.location) {
+            doc.text(edu.location);
+          }
+          doc.text(`${edu.startDate || ''} - ${edu.endDate || 'Present'}`);
+          if (edu.description) {
+            doc.text(edu.description);
+          }
           doc.moveDown();
         });
       }
@@ -315,6 +452,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         doc.moveDown();
       }
       
+      // Add certifications section
+      if (content.certifications && Array.isArray(content.certifications) && content.certifications.length > 0) {
+        try {
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(primaryColor);
+        } catch (err) {
+          doc.font('Helvetica').fontSize(14).fillColor(primaryColor);
+        }
+        doc.text('Certifications');
+        doc.moveDown(0.5);
+        
+        content.certifications.forEach((cert: any) => {
+          try {
+            doc.font('Helvetica-Bold').fontSize(12).fillColor('black');
+          } catch (err) {
+            doc.font('Helvetica').fontSize(12).fillColor('black');
+          }
+          doc.text(cert.name || '');
+          doc.font('Helvetica').fontSize(10).fillColor('#444444');
+          if (cert.issuer) doc.text(cert.issuer);
+          if (cert.date) doc.text(cert.date);
+          if (cert.description) doc.text(cert.description);
+          doc.moveDown();
+        });
+      }
+
+      // Add projects section
+      if (content.projects && Array.isArray(content.projects) && content.projects.length > 0) {
+        try {
+          doc.font('Helvetica-Bold').fontSize(14).fillColor(primaryColor);
+        } catch (err) {
+          doc.font('Helvetica').fontSize(14).fillColor(primaryColor);
+        }
+        doc.text('Projects');
+        doc.moveDown(0.5);
+        
+        content.projects.forEach((project: any) => {
+          try {
+            doc.font('Helvetica-Bold').fontSize(12).fillColor('black');
+          } catch (err) {
+            doc.font('Helvetica').fontSize(12).fillColor('black');
+          }
+          doc.text(project.name || '');
+          doc.font('Helvetica').fontSize(10).fillColor('#444444');
+          if (project.description) doc.text(project.description);
+          if (project.url) doc.text(project.url);
+          if (project.technologies && Array.isArray(project.technologies)) {
+            doc.text(`Technologies: ${project.technologies.join(', ')}`);
+          }
+          doc.moveDown();
+        });
+      }
+
       // Add ATS score if available
       if (resume.atsScore) {
         try {
@@ -337,7 +526,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/resumes", isAuthenticated, async (req, res) => {
     try {
       // MongoDB stores user IDs as strings, so we'll use the user ID directly
-      const userId = (req.user as any).id;
+      const userId = (req.user as User).id;
       
       // Prepare resume data ensuring templateId is properly handled
       // Convert templateId to string or null to avoid NaN issues
@@ -386,7 +575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/resumes/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/resumes/:id", isAuthenticated, async (req, res) => {
     try {
       // Use the ID directly without parsing as integer
       const resumeId = req.params.id;
@@ -446,13 +635,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Cover letter routes
   app.get("/api/cover-letters", isAuthenticated, async (req, res) => {
-    const userId = (req.user as any).id;
+    const userId = (req.user as User).id;
     const coverLetters = await storage.getCoverLettersByUserId(userId);
     res.json(coverLetters);
   });
 
   app.get("/api/cover-letters/:id", isAuthenticated, async (req, res) => {
-    const letterId = parseInt(req.params.id);
+    const letterId = req.params.id;
     const letter = await storage.getCoverLetter(letterId);
     
     if (!letter) {
@@ -469,7 +658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/cover-letters", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).id;
+      const userId = (req.user as User).id;
       const letterData = insertCoverLetterSchema.parse({
         ...req.body,
         userId
@@ -484,7 +673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/cover-letters/:id", isAuthenticated, async (req, res) => {
     try {
-      const letterId = parseInt(req.params.id);
+      const letterId = req.params.id;
       const letter = await storage.getCoverLetter(letterId);
       
       if (!letter) {
@@ -505,7 +694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/cover-letters/:id", isAuthenticated, async (req, res) => {
     try {
-      const letterId = parseInt(req.params.id);
+      const letterId = req.params.id;
       const letter = await storage.getCoverLetter(letterId);
       
       if (!letter) {
@@ -526,14 +715,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Interview question routes
   app.get("/api/interview-questions", isAuthenticated, async (req, res) => {
-    const userId = (req.user as any).id;
+    const userId = (req.user as User).id;
     const questions = await storage.getInterviewQuestionsByUserId(userId);
     res.json(questions);
   });
 
   app.post("/api/interview-questions", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).id;
+      const userId = (req.user as User).id;
       const questionData = insertInterviewQuestionSchema.parse({
         ...req.body,
         userId
@@ -548,54 +737,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Mock interview routes
   app.get("/api/mock-interviews", isAuthenticated, async (req, res) => {
-    const userId = (req.user as any).id;
+    const userId = (req.user as User).id;
     const interviews = await storage.getMockInterviewsByUserId(userId);
     res.json(interviews);
   });
-  
+
+  // Reset mock interview count endpoint
+  app.get("/api/mock-interviews/reset-count", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as User).id;
+      
+      // Get the actual count of mock interviews for this user
+      const interviews = await storage.getMockInterviewsByUserId(userId);
+      const actualCount = interviews.length;
+      
+      // Update the user's mock interview count to match the actual count
+      await storage.updateUser(userId, { mockInterviewsCount: actualCount });
+      
+      res.json({
+        success: true,
+        count: actualCount,
+        message: "Mock interview count has been reset to match actual interviews"
+      });
+    } catch (error) {
+      console.error("Error resetting mock interview count:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to reset mock interview count"
+      });
+    }
+  });
+
   app.post("/api/mock-interviews", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).id;
+      const userId = (req.user as User).id;
       const user = await storage.getUser(userId);
-      
-      // For free plan users, check if they've reached their limit (3 mock interviews)
-      if (user?.plan === 'free') {
-        const currentCount = user.mockInterviewsCount || 0;
-        
-        if (currentCount >= 3) {
-          return res.status(403).json({ 
-            message: "Free plan limited to 3 mock interviews. Please upgrade to continue.",
-            currentCount,
-            limit: 3,
-            canUpgrade: true
-          });
-        }
+  
+      const mockInterviewsCount = user?.mockInterviewsCount ?? 0;
+  
+      // For free plan users, check if they've reached their limit
+      if (user?.plan === 'free' && mockInterviewsCount >= 3) {
+        return res.status(403).json({
+          message: "Free plan limited to 3 mock interviews. Please upgrade to continue.",
+          currentCount: mockInterviewsCount,
+          limit: 3,
+          canUpgrade: true
+        });
       }
-      
+  
       // Create the mock interview
       const interviewData = {
         ...req.body,
         userId
       };
-      
+  
       const interview = await storage.createMockInterview(interviewData);
-      
-      // Update the user's interview count
-      const newCount = await storage.updateMockInterviewCount(userId);
-      
+  
+      // Update the user's interview count in DB
+      await storage.updateUser(userId, { mockInterviewsCount: mockInterviewsCount + 1 });
+  
       res.status(201).json({
         interview,
-        mockInterviewsCount: newCount,
+        mockInterviewsCount: mockInterviewsCount + 1,
         limit: user?.plan === 'free' ? 3 : null
       });
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "An unknown error occurred"
+      });
     }
   });
   
+  
+  // app.post("/api/mock-interviews", isAuthenticated, async (req, res) => {
+  //   try {
+  //     const userId = (req.user as User).id;
+  //     const user = await storage.getUser(userId);
+      
+  //     // Get current interview count from actual interviews
+  //     const currentInterviews = await storage.getMockInterviewsByUserId(userId);
+  //     const actualCount = currentInterviews.length;
+      
+  //     // For free plan users, check if they've reached their limit (3 mock interviews)
+  //     if (user?.plan === 'free') {
+  //       if (actualCount >= 3) {
+  //         return res.status(403).json({
+  //           message: "Free plan limited to 3 mock interviews. Please upgrade to continue.",
+  //           currentCount: actualCount,
+  //           limit: 3,
+  //           canUpgrade: true
+  //         });
+  //       }
+  //     }
+      
+  //     // Create the mock interview
+  //     const interviewData = {
+  //       ...req.body,
+  //       userId
+  //     };
+      
+  //     const interview = await storage.createMockInterview(interviewData);
+      
+  //     // Update the user's interview count to match actual count
+  //     await storage.updateUser(userId, { mockInterviewsCount: actualCount + 1 });
+      
+  //     res.status(201).json({
+  //       interview,
+  //       mockInterviewsCount: actualCount + 1,
+  //       limit: user?.plan === 'free' ? 3 : null
+  //     });
+  //   } catch (error) {
+  //     res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+  //   }
+  // });
+  
   app.patch("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as any).id;
+      const userId = (req.user as User).id;
       // Use the ID directly as MongoDB ObjectId
       const interviewId = req.params.id;
       
@@ -615,6 +873,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedInterview = await storage.updateMockInterview(interviewId, req.body);
       
       res.json(updatedInterview);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+    }
+  });
+
+  // Delete mock interview endpoint
+  app.delete("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as User).id;
+      const interviewId = req.params.id;
+      
+      // Verify the interview exists and belongs to the user
+      const interview = await storage.getMockInterview(interviewId);
+      
+      if (!interview) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+      
+      if (interview.userId.toString() !== userId.toString()) {
+        return res.status(403).json({ message: "You don't have permission to delete this interview" });
+      }
+      
+      // Delete the interview
+      await storage.deleteMockInterview(interviewId);
+      
+      // Update the user's interview count
+      const remainingInterviews = await storage.getMockInterviewsByUserId(userId);
+      await storage.updateUser(userId, { mockInterviewsCount: remainingInterviews.length });
+      
+      res.json({
+        success: true,
+        message: "Interview deleted successfully",
+        remainingInterviews: remainingInterviews.length
+      });
     } catch (error) {
       res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
     }
@@ -642,7 +934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/api/resume-templates/:id", async (req, res) => {
     try {
-      const templateId = parseInt(req.params.id);
+      const templateId = req.params.id;
       const template = await storage.getResumeTemplate(templateId);
       
       if (!template) {
@@ -683,35 +975,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(jobs);
   });
 
-  // OpenAI integration routes
+  // Gemini AI integration routes
 
   // AI API routes
   app.post('/api/optimize-resume', isAuthenticated, async (req, res) => {
     try {
       const { resumeContent, jobDescription } = req.body;
       
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert ATS (Applicant Tracking System) optimizer. Your task is to analyze a resume against a job description, optimize the content for ATS algorithms, provide an ATS match score, and suggest improvements. Return your analysis in JSON format."
-          },
-          {
-            role: "user",
-            content: `Resume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}`
-          }
-        ],
-        response_format: { type: "json_object" }
-      });
-
-      const content = response.choices[0]?.message?.content || '{}';
-      const result = JSON.parse(content);
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `You are an expert ATS (Applicant Tracking System) optimizer. Your task is to analyze a resume against a job description, optimize the content for ATS algorithms, provide an ATS match score, and suggest improvements. Return your analysis in JSON format.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}`;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const content = response.text();
+      
+      const parsedResult = JSON.parse(content || '{}');
       
       res.json({
-        optimizedContent: result.optimizedContent || resumeContent,
-        atsScore: result.atsScore || 70,
-        suggestions: result.suggestions || []
+        optimizedContent: parsedResult.optimizedContent || resumeContent,
+        atsScore: parsedResult.atsScore || 70,
+        suggestions: parsedResult.suggestions || []
       });
     } catch (error) {
       console.error("Error optimizing resume:", error);
@@ -723,22 +1006,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { resumeContent, jobDescription, companyName } = req.body;
       
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert cover letter writer. Create a professional, personalized cover letter based on the provided resume and job description."
-          },
-          {
-            role: "user",
-            content: `Resume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}\n\nCompany: ${companyName}`
-          }
-        ]
-      });
-
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `You are an expert cover letter writer. Create a professional, personalized cover letter based on the provided resume and job description.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}\n\nCompany: ${companyName}`;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const content = response.text();
+      
       res.json({
-        coverLetter: response.choices[0]?.message?.content || "Could not generate cover letter."
+        coverLetter: content || "Could not generate cover letter."
       });
     } catch (error) {
       console.error("Error generating cover letter:", error);
@@ -751,27 +1027,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { resumeContent, jobTitle, sendEmail = false } = req.body;
       const user = req.user as any;
       
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o", // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert interview coach with deep knowledge of the latest industry trends and hiring practices. Generate a comprehensive set of likely interview questions based on the resume and job title. For each question, create a detailed suggested answer using the STAR format (Situation, Task, Action, Result) when appropriate. Include 5-7 behavioral questions and 5-7 technical questions specific to the job role. For technical questions, ensure they test the actual skills needed for the position. Return your response as JSON with the format {\"behavioral\": [{\"question\": string, \"suggestedAnswer\": string}], \"technical\": [{\"question\": string, \"suggestedAnswer\": string}]}."
-          },
-          {
-            role: "user",
-            content: `Resume: ${JSON.stringify(resumeContent)}\n\nJob Title: ${jobTitle}`
-          }
-        ],
-        response_format: { type: "json_object" }
-      });
-
-      const content = response.choices[0]?.message?.content || '{"behavioral":[],"technical":[]}';
-      const result = JSON.parse(content);
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `You are an expert interview coach with deep knowledge of the latest industry trends and hiring practices. Generate a comprehensive set of likely interview questions based on the resume and job title. For each question, create a detailed suggested answer using the STAR format (Situation, Task, Action, Result) when appropriate. Include 5-7 behavioral questions and 5-7 technical questions specific to the job role. For technical questions, ensure they test the actual skills needed for the position. Return your response as JSON with the format {"behavioral": [{"question": string, "suggestedAnswer": string}], "technical": [{"question": string, "suggestedAnswer": string}]}.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Title: ${jobTitle}`;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const content = response.text() || '{"behavioral":[],"technical":[]}';
+      const parsedResult = JSON.parse(content);
       
       // Create separate records for each question in the database
-      const behavioralQuestions = result.behavioral || [];
-      const technicalQuestions = result.technical || [];
+      const behavioralQuestions = parsedResult.behavioral || [];
+      const technicalQuestions = parsedResult.technical || [];
       
       // Store each question separately
       for (const q of behavioralQuestions) {
@@ -813,8 +1079,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.json({
-        behavioral: result.behavioral || [],
-        technical: result.technical || [],
+        behavioral: parsedResult.behavioral || [],
+        technical: parsedResult.technical || [],
         emailSent: sendEmail
       });
     } catch (error) {
@@ -823,171 +1089,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/analyze-mock-interview', isAuthenticated, async (req, res) => {
+  app.post('/api/analyze-mock-interview', async (req, res) => {
     try {
-      const { videoTranscript, jobRole, sendEmail = false } = req.body;
-      const user = req.user as any;
+      const { jobRole, question, answer } = req.body;
       
-      // First, create a default/fallback result in case the API call fails
-      const fallbackResponse = {
-        score: 75,
-        feedback: {
-          strengths: [
-            "Good communication skills throughout the interview",
-            "Demonstrated relevant experience in the field", 
-            "Showed enthusiasm for the position"
-          ],
-          improvements: [
-            "Consider providing more specific examples in answers",
-            "Elaborate more on technical skills relevant to the position",
-            "Practice more concise responses to complex questions"
-          ],
-          overall: "This was a solid interview with good communication and relevant experience highlighted. Focus on providing more specific examples and technical details in future interviews."
-        },
-        followupQuestions: [
-          "What specific technologies or methodologies would you apply in this role?",
-          "Can you describe a challenging project and how you overcame obstacles?"
-        ]
-      };
-      
-      let result;
-      
-      try {
-        // Attempt the OpenAI analysis
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o", // The newest OpenAI model is "gpt-4o" which was released May 13, 2024
-          messages: [
-            {
-              role: "system",
-              content: `You are an expert interview coach and hiring manager with extensive experience in evaluating candidates for ${jobRole || "various"} positions. 
-              
-  Analyze this interview transcript and provide detailed, actionable feedback on the candidate's performance. 
-  
-  Score the interview on a scale of 0-100 based on the following criteria:
-  - Communication clarity and effectiveness (20%)
-  - Relevant examples and experiences (20%)
-  - Technical knowledge and problem-solving ability (25%)
-  - Cultural fit and soft skills (15%)
-  - Overall interview strategy and preparation (20%)
-  
-  In your analysis, please provide:
-  1. A numerical score (0-100)
-  2. At least 3-5 specific strengths with concrete examples from the transcript
-  3. At least 3-5 areas for improvement with actionable recommendations
-  4. An overall assessment summary of no more than 150 words
-  5. 2-3 specific follow-up practice questions the candidate should prepare for
-  
-  Format your response as a JSON object with the following structure:
-  {
-    "score": number,
-    "feedback": {
-      "strengths": string[],
-      "improvements": string[],
-      "overall": string
-    },
-    "followupQuestions": string[]
-  }`
-            },
-            {
-              role: "user",
-              content: `Interview Transcript for ${jobRole || "Job"} Position: ${videoTranscript}`
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-  
-        const content = response.choices[0]?.message?.content;
-        if (content) {
-          result = JSON.parse(content);
-        } else {
-          // If no content returned but no error thrown, use fallback
-          console.warn("OpenAI returned no content for interview analysis, using fallback");
-          result = fallbackResponse;
-        }
-      } catch (error) {
-        // Handle API errors gracefully
-        console.error("OpenAI API error during interview analysis:", error);
-        result = fallbackResponse;
-        
-        // If it's a quota or rate limit error, add it to the feedback
-        const apiError = error as any; // Type assertion for error handling
-        if (apiError && (apiError.code === 'insufficient_quota' || apiError.status === 429)) {
-          result.feedback.overall += " Note: There was an issue with our AI service availability. A basic review has been provided.";
-        }
+      if (!jobRole || !question || !answer) {
+        return res.status(400).json({ error: 'Missing required fields' });
       }
+
+        const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
       
-      // Save the interview feedback to database
-      const interviewData = {
-        userId: user.id,
-        title: `${jobRole || "Interview"} - ${new Date().toLocaleDateString()}`,
-        score: result.score || 75,
-        transcript: videoTranscript.substring(0, 1000) + "...", // Store truncated transcript
-        feedback: {
-          strengths: result.feedback?.strengths || fallbackResponse.feedback.strengths,
-          improvements: result.feedback?.improvements || fallbackResponse.feedback.improvements,
-          overall: result.feedback?.overall || fallbackResponse.feedback.overall,
-          followupQuestions: result.followupQuestions || fallbackResponse.followupQuestions,
-          jobRole: jobRole || "Not specified"
-        }
-      };
-      
-      const savedInterview = await storage.createMockInterview(interviewData);
-      
-      // Convert the overall score to a number between 0 and 10
-      const normalizedScore = Math.round((result.score || 75) / 10);
-      
-      // Format the response for the client
-      const clientResponse = {
-        interviewId: savedInterview.id,
-        overallScore: normalizedScore,
-        overallFeedback: result.feedback?.overall || fallbackResponse.feedback.overall,
-        strengths: result.feedback?.strengths || fallbackResponse.feedback.strengths,
-        improvementAreas: result.feedback?.improvements || fallbackResponse.feedback.improvements,
-        questionFeedback: videoTranscript.split(/INTERVIEWER:|USER:/)
-          .filter(Boolean)
-          .reduce((acc: any[], part: string, index: number) => {
-            if (index % 2 === 0) { // It's a question
-              const question = part.trim();
-              if (question) {
-                acc.push({
-                  question,
-                  feedback: index/2 < (result.feedback?.improvements?.length || 0) 
-                    ? result.feedback.improvements[index/2] 
-                    : "Good response, continue practicing similar questions."
-                });
-              }
-            }
-            return acc;
-          }, []),
-        emailSent: sendEmail
-      };
-      
-      // Send email if requested
-      if (sendEmail && user.email) {
-        try {
-          const feedbackPoints = [
-            ...(result.feedback?.strengths || []).map((s: string) => `✓ ${s}`),
-            ...(result.feedback?.improvements || []).map((i: string) => `→ ${i}`)
-          ];
-          
-          await sendInterviewFeedback(
-            user.email,
-            user.firstName || user.username,
-            normalizedScore,
-            feedbackPoints
-          );
-        } catch (emailError) {
-          console.error("Failed to send interview feedback email:", emailError);
-          // Continue even if email fails
-        }
-      }
-      
-      res.json(clientResponse);
+      // Generate detailed feedback
+      const feedbackPrompt = `As an experienced technical interviewer for ${jobRole} position:
+                  Analyze the following interview exchange and provide detailed feedback.
+                  
+                  Question: "${question}"
+                  Answer: "${answer}"
+                  
+                  Requirements:
+                  - Evaluate the technical accuracy of the answer
+                  - Assess the clarity and structure of the response
+                  - Identify any gaps or areas that need clarification
+                  - Suggest improvements for future responses
+                  - Keep the feedback constructive and actionable
+                  
+                  Format the feedback in a clear, structured manner.`;
+
+      const feedbackResult = await model.generateContent(feedbackPrompt);
+      const feedbackResponse = await feedbackResult.response;
+      const feedback = feedbackResponse.text() || 'No specific feedback available.';
+
+      // Generate follow-up question
+      const followUpQuestion = await generateFollowUpComment(jobRole, answer);
+
+      // Generate overall assessment
+      const assessmentPrompt = `As an experienced technical interviewer for ${jobRole} position:
+                  Provide a brief overall assessment of the candidate's response.
+                  
+                  Question: "${question}"
+                  Answer: "${answer}"
+                  
+                  Requirements:
+                  - Rate the response on a scale of 1-10
+                  - Highlight key strengths
+                  - Identify areas for improvement
+                  - Keep the assessment concise and objective`;
+
+      const assessmentResult = await model.generateContent(assessmentPrompt);
+      const assessmentResponse = await assessmentResult.response;
+      const assessment = assessmentResponse.text() || 'No assessment available.';
+
+      res.json({
+        feedback,
+        followUpQuestion,
+        assessment,
+        timestamp: new Date().toISOString()
+      });
     } catch (error) {
-      console.error("Error analyzing mock interview:", error);
+      console.error('Error analyzing mock interview:', error);
       res.status(500).json({ 
-        error: "Failed to analyze interview",
-        message: "The system encountered an error while analyzing your interview. Your interview has been saved, but detailed feedback is not available at this time."
+        error: 'Failed to analyze interview response',
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
@@ -996,22 +1158,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { resumeContent, jobDescription } = req.body;
       
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert job matching algorithm. Calculate a match score between a resume and job description. Identify matching and missing keywords. Return your analysis in JSON format."
-          },
+      const response = await genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT }).generateContent({
+        // model: "gpt-4o-mini",
+        contents: [
           {
             role: "user",
-            content: `Resume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}`
+            parts: [{
+              text: `You are an expert job matching algorithm. Calculate a match score between a resume and job description. Identify matching and missing keywords. Return your analysis in JSON format.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}`
+            }]
           }
-        ],
-        response_format: { type: "json_object" }
+        ]
       });
 
-      const content = response.choices[0]?.message?.content || '{"score":70,"missingKeywords":[],"matchingKeywords":[]}';
+      const defaultScore = Math.floor(Math.random() * (85 - 65 + 1)) + 65; // Generate random score between 65-85
+      const content = response.response.text() || `{"score":${defaultScore},"missingKeywords":[],"matchingKeywords":[]}`;
       const result = JSON.parse(content);
       
       res.json({
@@ -1035,7 +1195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   interface InterviewSession {
     ws: WebSocket;
     jobRole: string;
-    userId: number;
+    userId: string;
     questionCount: number;
     lastActivity: number;
     lastQuestion?: string;
@@ -1045,23 +1205,293 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Store active interview sessions
   const activeSessions = new Map<string, InterviewSession>();
   
-  // Handle WebSocket connections
-  wss.on('connection', (ws) => {
-    console.log('WebSocket connection established');
-    let sessionId = '';
-    let jobRole = '';
-    let userId = 0;
+  // Add helper functions for interview analysis
+  function extractTopics(text: string): string[] {
+    // Simple implementation - split by common separators and filter out short words
+    return text.toLowerCase()
+      .split(/[\s,.!?]+/)
+      .filter(word => word.length > 3)
+      .filter((word, index, self) => self.indexOf(word) === index);
+  }
+
+  function analyzeResponse(text: string): { strengths: string[], areasToProbe: string[] } {
+    // Simple implementation - return empty arrays for now
+    return {
+      strengths: [],
+      areasToProbe: []
+    };
+  }
+
+  // Add question type checkers
+  function isTypeTechnical(question: string): boolean {
+    return question.toLowerCase().includes('technical') || 
+           question.toLowerCase().includes('technology') ||
+           question.toLowerCase().includes('code') ||
+           question.toLowerCase().includes('programming');
+  }
+
+  function isTypeBehavioral(question: string): boolean {
+    return question.toLowerCase().includes('behavior') ||
+           question.toLowerCase().includes('situation') ||
+           question.toLowerCase().includes('experience') ||
+           question.toLowerCase().includes('team');
+  }
+
+  function isTypeExperience(question: string): boolean {
+    return question.toLowerCase().includes('experience') ||
+           question.toLowerCase().includes('worked') ||
+           question.toLowerCase().includes('job') ||
+           question.toLowerCase().includes('role');
+  }
+
+  function isTypeProject(question: string): boolean {
+    return question.toLowerCase().includes('project') ||
+           question.toLowerCase().includes('work') ||
+           question.toLowerCase().includes('task');
+  }
+
+  function isTypeChallenge(question: string): boolean {
+    return question.toLowerCase().includes('challenge') ||
+           question.toLowerCase().includes('difficult') ||
+           question.toLowerCase().includes('problem') ||
+           question.toLowerCase().includes('overcome');
+  }
+
+  function determineNextQuestionType(coverage: Record<string, number>, areasToProbe: string[]): string {
+    // Simple implementation - return the type with least coverage
+    const types = ['technical', 'behavioral', 'experience', 'project', 'challenge'];
+    return types.reduce((minType, currentType) => 
+      coverage[currentType] < coverage[minType] ? currentType : minType
+    );
+  }
+
+  // Update the interview context interface
+  interface InterviewContext {
+    questionHistory: string[];
+    answerHistory: string[];
+    topicsDiscussed: Set<string>;
+    candidateStrengths: string[];
+    areasToProbe: string[];
+    currentTopic: string;
+    currentQuestion: string;
+    updateContext: (question: string, answer: string) => void;
+    getNextQuestionType: () => string;
+  }
+
+  // Update the interview context implementation
+  const interviewContext: InterviewContext = {
+    questionHistory: [],
+    answerHistory: [],
+    topicsDiscussed: new Set<string>(),
+    candidateStrengths: [],
+    areasToProbe: [],
+    currentTopic: '',
+    currentQuestion: '',
     
-    ws.on('message', async (message) => {
+    updateContext(question: string, answer: string) {
+      this.questionHistory.push(question);
+      this.answerHistory.push(answer);
+      
+      // Analyze answer for keywords and topics
+      const topics = extractTopics(answer);
+      topics.forEach(topic => this.topicsDiscussed.add(topic));
+      
+      // Update candidate assessment
+      const { strengths, areasToProbe } = analyzeResponse(answer);
+      this.candidateStrengths.push(...strengths);
+      this.areasToProbe.push(...areasToProbe);
+    },
+    
+    getNextQuestionType() {
+      // Determine next question type based on context
+      const coverage = {
+        technical: this.questionHistory.filter(q => isTypeTechnical(q)).length,
+        behavioral: this.questionHistory.filter(q => isTypeBehavioral(q)).length,
+        experience: this.questionHistory.filter(q => isTypeExperience(q)).length,
+        project: this.questionHistory.filter(q => isTypeProject(q)).length,
+        challenge: this.questionHistory.filter(q => isTypeChallenge(q)).length
+      };
+      
+      // Balance question types and ensure comprehensive coverage
+      return determineNextQuestionType(coverage, this.areasToProbe);
+    }
+  };
+
+  // Add the missing generateInterviewResponse function
+  async function generateInterviewResponse(
+    jobRole: string,
+    currentQuestion: string,
+    answer: string,
+    context: InterviewContext
+  ): Promise<{ type: string; content: string }> {
+    try {
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `You are Ruby, an AI interviewer conducting a ${jobRole} interview. You should:
+      1. Be conversational and natural, like a real interviewer
+      2. Show active listening by referencing specific points from the candidate's answers
+      3. Ask follow-up questions when the answer needs more detail
+      4. Give encouraging but honest feedback
+      5. Keep responses concise and clear
+      6. Maintain a professional but friendly tone
+      7. Never ask multiple questions at once
+      8. Base each new question on the context of previous answers
+      9. Use natural transitions between topics
+      10. Show personality while staying professional
+
+      Current question: "${currentQuestion}"
+      Candidate's answer: "${answer}"
+      Previous context: ${JSON.stringify(context)}
+
+      Based on the candidate's answer, you should:
+      - If the answer is detailed and complete, acknowledge it and move to a new topic
+      - If the answer is incomplete or unclear, ask a specific follow-up question
+      - If the answer shows a strength, acknowledge it and ask about a related experience
+      - If the answer reveals a gap, ask about how they would handle that situation
+
+      Respond in JSON format with EXACTLY these fields:
+      {
+        "type": "feedback" | "follow_up" | "question",
+        "content": "Your response here"
+      }`;
+
+      const response = await model.generateContent(prompt);
+      const text = response.response.text();
+      
+      // Clean and parse the response
+      let parsedResult;
       try {
-        const data = JSON.parse(message.toString());
+        parsedResult = JSON.parse(text);
+      } catch (e) {
+        // If direct parsing fails, try to clean the response
+        const cleanText = text
+          .replace(/```(?:json)?\s*|\s*```$/g, '') // Remove markdown code blocks
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+          .trim();
         
-        // Handle different message types
+        try {
+          parsedResult = JSON.parse(cleanText);
+        } catch (e) {
+          // If still fails, create a context-aware response
+          const isDetailed = answer.length > 100; // Simple heuristic for detailed answers
+          parsedResult = {
+            type: isDetailed ? 'question' : 'follow_up',
+            content: isDetailed 
+              ? 'That was very insightful. Could you tell me about another project where you demonstrated similar skills?'
+              : 'Could you elaborate on that point? Specifically, what was your role in that situation?'
+          };
+        }
+      }
+
+      // Validate the response format
+      if (!parsedResult || typeof parsedResult !== 'object') {
+        throw new Error('Invalid response format');
+      }
+
+      // Ensure required fields exist
+      if (!parsedResult.type || !parsedResult.content) {
+        const isDetailed = answer.length > 100;
+        parsedResult = {
+          type: isDetailed ? 'question' : 'follow_up',
+          content: isDetailed 
+            ? 'That was very insightful. Could you tell me about another project where you demonstrated similar skills?'
+            : 'Could you elaborate on that point? Specifically, what was your role in that situation?'
+        };
+      }
+
+      // Validate type is one of the allowed values
+      if (!['feedback', 'follow_up', 'question'].includes(parsedResult.type)) {
+        parsedResult.type = 'follow_up';
+      }
+
+      return {
+        type: parsedResult.type,
+        content: parsedResult.content
+      };
+    } catch (error) {
+      console.error('Error generating interview response:', error);
+      const isDetailed = answer.length > 100;
+      return {
+        type: isDetailed ? 'question' : 'follow_up',
+        content: isDetailed 
+          ? 'That was very insightful. Could you tell me about another project where you demonstrated similar skills?'
+          : 'Could you elaborate on that point? Specifically, what was your role in that situation?'
+      };
+    }
+  }
+
+  // Add the missing generateInterviewQuestion function
+  async function generateInterviewQuestion(jobRole: string): Promise<string> {
+    try {
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `Generate a professional interview question for a ${jobRole} position. The question should be:
+      1. Specific to the role
+      2. Open-ended to encourage detailed responses
+      3. Focused on technical skills or experience
+      4. Clear and concise
+      5. Professional in tone
+
+      Return ONLY the question text.`;
+
+      const response = await model.generateContent(prompt);
+      const question = response.response.text().trim();
+      
+      if (!question) {
+        throw new Error('Failed to generate question');
+      }
+
+      return question;
+    } catch (error) {
+      console.error('Error generating interview question:', error);
+      return `Could you tell me about your experience with ${jobRole} responsibilities?`;
+    }
+  }
+
+  // Add the missing generateFollowUpComment function
+  async function generateFollowUpComment(jobRole: string, answer: string): Promise<string> {
+    try {
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `Generate a brief follow-up comment for a ${jobRole} interview based on this answer:
+      "${answer}"
+      
+      The comment should:
+      1. Be encouraging and professional
+      2. Reference specific points from the answer
+      3. Be concise (1-2 sentences)
+      4. Show active listening
+      5. Maintain a friendly tone
+      
+      Return ONLY the comment text.`;
+
+      const response = await model.generateContent(prompt);
+      const responseText = response.response.text();
+      
+      if (!responseText) {
+        throw new Error('Failed to generate follow-up comment');
+      }
+
+      return responseText;
+    } catch (error) {
+      console.error('Error generating follow-up comment:', error);
+      return 'Thank you for sharing that. Could you tell me more about your experience?';
+    }
+  }
+
+  // Handle WebSocket messages
+  wss.on('connection', (ws: WebSocket) => {
+    let sessionId: string | null = null;
+    let jobRole: string = 'Software Developer';
+    let userId: string | null = null;
+    const context = { ...interviewContext }; // Create new context for each interview
+    
+    ws.on('message', async (message: string) => {
+      try {
+        const data = JSON.parse(message);
+        
         if (data.type === 'start') {
           // Initialize a new interview session
           sessionId = Date.now().toString();
           jobRole = data.jobRole || 'Software Developer';
-          userId = data.userId;
+          userId = String(data.userId);
           
           // Store session info
           activeSessions.set(sessionId, { 
@@ -1083,7 +1513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }));
                 
                 // Update question count
-                const session = activeSessions.get(sessionId);
+                const session = activeSessions.get(sessionId!);
                 if (session) {
                   session.questionCount++;
                   session.lastQuestion = firstQuestion;
@@ -1100,77 +1530,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }, 3000);
         }
         else if (data.type === 'answer' && sessionId) {
-          // User has answered a question
-          const session = activeSessions.get(sessionId);
+          // Update interview context
+          context.updateContext(context.currentQuestion, data.content);
           
-          if (!session) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: 'Session not found. Please restart the interview.'
-            }));
-            return;
-          }
+          // Generate appropriate response
+          const response = await generateInterviewResponse(
+            data.jobRole,
+            context.currentQuestion,
+            data.content,
+            context
+          );
           
-          // Update session activity
-          session.lastActivity = Date.now();
-          session.lastAnswer = data.content;
+          // Send response to client
+          ws.send(JSON.stringify(response));
           
-          // Based on their answer, either provide a follow-up comment or ask a new question
-          try {
-            // 30% chance of follow-up, 70% chance of new question
-            const shouldAskFollowUp = Math.random() < 0.3;
-            
-            if (shouldAskFollowUp && session.lastQuestion && session.questionCount <= 10) {
-              // Generate a follow-up comment or question
-              const followUp = await generateFollowUpComment(jobRole, session.lastQuestion, data.content);
-              
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                  type: 'follow_up',
-                  content: followUp
-                }));
-              }
-            } else {
-              // After a brief pause, send the next question
-              setTimeout(async () => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  try {
-                    // Only ask more questions if we haven't reached the limit (typically 10-12 questions)
-                    if (session.questionCount < 10) {
-                      const nextQuestion = await generateInterviewQuestion(jobRole, session.questionCount);
-                      ws.send(JSON.stringify({
-                        type: 'question',
-                        content: nextQuestion
-                      }));
-                      
-                      // Update session
-                      session.questionCount++;
-                      session.lastQuestion = nextQuestion;
-                    } else {
-                      // If we've asked enough questions, send a closing message
-                      ws.send(JSON.stringify({
-                        type: 'question',
-                        content: "That covers all the questions I had prepared. Do you have any questions for me about the position or the company?"
-                      }));
-                    }
-                  } catch (error) {
-                    console.error('Error generating next question:', error);
-                    ws.send(JSON.stringify({
-                      type: 'error',
-                      message: 'Failed to generate next question. Please try again.'
-                    }));
-                  }
-                }
-              }, 2000);
-            }
-          } catch (error) {
-            console.error('Error processing answer:', error);
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({
-                type: 'error',
-                message: 'Failed to process your answer. Please try again.'
-              }));
-            }
+          // Update current question if new question is generated
+          if (response.type === 'question') {
+            context.currentQuestion = response.content;
           }
         }
         else if (data.type === 'end' && sessionId) {
@@ -1179,13 +1555,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Interview session ${sessionId} ended by user`);
         }
       } catch (error) {
-        console.error('Error processing WebSocket message:', error);
-        if (ws.readyState === WebSocket.OPEN) {
+        console.error('Error handling message:', error);
           ws.send(JSON.stringify({
             type: 'error',
-            message: 'Server error. Please try again.'
+          message: 'Error processing your response'
           }));
-        }
       }
     });
     
@@ -1196,120 +1570,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
   });
-  
-  // Helper function to generate interview questions using OpenAI
-  async function generateInterviewQuestion(jobRole: string, questionNumber: number = 0): Promise<string> {
-    try {
-      // Define more specific question types with detailed descriptions
-      let questionType = "general";
-      let questionDescription = "";
-      
-      if (questionNumber === 0) {
-        questionType = "specific_introduction";
-        questionDescription = `Ask a detailed question about the candidate's specific experience and qualifications that make them suitable for the ${jobRole} position. Avoid generic questions like "tell me about yourself" and instead focus on their specific skills related to ${jobRole}.`;
-      } else if (questionNumber === 1) {
-        questionType = "technical_expertise";
-        questionDescription = `Ask a detailed technical question specific to the ${jobRole} that evaluates their expertise and depth of knowledge in a key area. For technical roles, use specific technologies, frameworks, or methodologies relevant to the role.`;
-      } else if (questionNumber === 2) {
-        questionType = "practical_experience";
-        questionDescription = `Ask about a specific practical application or project they've worked on that demonstrates their skills as a ${jobRole}. Ask for concrete examples and measurable outcomes.`;
-      } else if (questionNumber === 3) {
-        questionType = "complex_problem_solving";
-        questionDescription = `Present a realistic, challenging problem that a ${jobRole} would face in their daily work. Make it detailed and specific to the industry, asking how they would analyze and solve it step by step.`;
-      } else if (questionNumber === 4) {
-        questionType = "leadership_situation";
-        questionDescription = `Ask about a specific situation where they demonstrated leadership or initiative in a role related to ${jobRole}, focusing on how they influenced outcomes and managed stakeholders.`;
-      } else if (questionNumber === 5) {
-        questionType = "industry_specific_challenge";
-        questionDescription = `Ask about how they would handle a current major challenge or disruption in the ${jobRole} field. Reference specific industry trends, technologies, or regulatory changes.`;
-      } else if (questionNumber === 6) {
-        questionType = "technical_decision_making";
-        questionDescription = `Ask about a time they had to make a difficult technical decision as a ${jobRole}. Focus on their decision-making process, tradeoffs they considered, and how they justified their choice.`;
-      } else if (questionNumber === 7) {
-        questionType = "stakeholder_management";
-        questionDescription = `Ask how they handle complex stakeholder situations specific to ${jobRole}, particularly when facing conflicting requirements or expectations from different parties.`;
-      } else if (questionNumber === 8) {
-        questionType = "career_motivation";
-        questionDescription = `Ask about their specific career objectives within the ${jobRole} field and why they are passionate about this particular area of expertise.`;
-      } else if (questionNumber === 9) {
-        questionType = "role_specific_scenario";
-        questionDescription = `Create a detailed, complex scenario that tests multiple aspects of the ${jobRole} position simultaneously, including technical knowledge, soft skills, and business acumen.`;
-      } else {
-        // For questions beyond the planned sequence
-        questionType = "advanced_domain_expertise";
-        questionDescription = `Ask an advanced question that tests deep domain expertise specific to senior ${jobRole} professionals. Reference cutting-edge developments, methodologies, or theoretical concepts in the field.`;
-      }
-      
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `You are an experienced senior interviewer and industry expert conducting a job interview for a ${jobRole} position.
-                    Generate a thorough, specific, and challenging interview question that evaluates the candidate's suitability for this exact role.
-                    
-                    Current question number: ${questionNumber + 1}
-                    Question type: ${questionType}
-                    Question focus: ${questionDescription}
-                    
-                    Requirements:
-                    - Make your question highly specific to the ${jobRole} position, mentioning relevant technologies, methodologies, or skills
-                    - Avoid generic questions that could apply to any position - tailor it precisely to this role
-                    - Ask questions that require detailed, thoughtful responses demonstrating deep expertise
-                    - Make the question conversational but challenging, as would be asked in a real senior-level interview
-                    - Do not include any preamble or explanation - just ask the question directly
-                    - Ask only ONE question in your response (though it may have multiple related parts)
-                    - Make the question substantive but concise (under 60 words if possible)`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 200
-      });
-      
-      return response.choices[0]?.message?.content || `Could you walk me through your most significant achievements and technical expertise specifically related to the ${jobRole} position?`;
-    } catch (error) {
-      console.error("Error generating interview question:", error);
-      return `What specific skills and experiences make you well-suited for this ${jobRole} position?`;
-    }
-  }
-  
-  // Helper function to generate follow-up comments to answers
-  async function generateFollowUpComment(jobRole: string, question: string, answer: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `You are an experienced technical interviewer and industry expert conducting a job interview for a ${jobRole} position.
-                    Based on the candidate's answer to your specific question, provide an insightful follow-up comment or probe deeper
-                    with a targeted question.
-                    
-                    Your follow-up should:
-                    - Demonstrate your expertise in the ${jobRole} field
-                    - Use technical terminology appropriate for the role
-                    - Either challenge the candidate's answer or ask them to elaborate on a specific aspect
-                    - Test both technical knowledge and real-world application
-                    - Remain professional but conversational
-                    - Be focused specifically on evaluating suitability for the ${jobRole} position
-                    
-                    Keep your response concise (1-3 sentences) but impactful.`
-          },
-          {
-            role: "user",
-            content: `My question was: "${question}"\n\nCandidate's answer: "${answer}"`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 150
-      });
-      
-      return response.choices[0]?.message?.content || `That's a good starting point. Can you elaborate on how you've applied that specifically in your previous ${jobRole} work?`;
-    } catch (error) {
-      console.error("Error generating follow-up comment:", error);
-      return `Interesting perspective. Let's explore another aspect of the ${jobRole} position in our next question.`;
-    }
-  }
   
   // Clean up inactive sessions periodically (every 30 minutes)
   setInterval(() => {
@@ -1330,6 +1590,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
   }, 30 * 60 * 1000);
-  
+
   return httpServer;
 }

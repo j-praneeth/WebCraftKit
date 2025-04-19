@@ -5,9 +5,8 @@ import { z } from "zod";
 // User table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
   email: text("email").notNull().unique(),
-  password: text("password").notNull(),
+  password: text("password"),
   firstName: text("first_name"),
   lastName: text("last_name"),
   role: text("role").default("user").notNull(), // user, organization_admin, creator_admin
@@ -15,17 +14,20 @@ export const users = pgTable("users", {
   profilePicture: text("profile_picture"),
   plan: text("plan").default("free").notNull(), // free, professional, enterprise
   mockInterviewsCount: integer("mock_interviews_count").default(0), // Track usage for free tier limits
+  provider: text("provider").default("local"), // local, google, linkedin, apple
+  providerId: text("provider_id"), // ID from the OAuth provider
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  email: true,
-  password: true,
-  firstName: true,
-  lastName: true,
-  role: true,
-  profilePicture: true,
-  plan: true,
+export const insertUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().optional(), // Optional for OAuth users
+  firstName: z.string().optional().nullable(),
+  lastName: z.string().optional().nullable(),
+  role: z.string().optional().default("user"),
+  profilePicture: z.string().optional().nullable(),
+  plan: z.string().optional().default("free"),
+  provider: z.string().optional().default("local"),
+  providerId: z.string().optional(),
 });
 
 // Resume Templates table
@@ -92,18 +94,19 @@ export const insertCoverLetterSchema = createInsertSchema(coverLetters).pick({
 // Interview Question table
 export const interviewQuestions = pgTable("interview_questions", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull(),
+  userId: text("user_id").notNull(), // Changed to text to support MongoDB ObjectIds
   question: text("question").notNull(),
   suggestedAnswer: text("suggested_answer"),
   category: text("category").default("behavioral"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const insertInterviewQuestionSchema = createInsertSchema(interviewQuestions).pick({
-  userId: true,
-  question: true,
-  suggestedAnswer: true,
-  category: true,
+// Use custom schema for Interview Questions to support MongoDB IDs
+export const insertInterviewQuestionSchema = z.object({
+  userId: z.union([z.string(), z.number()]),
+  question: z.string(),
+  suggestedAnswer: z.string().optional(),
+  category: z.string().default("behavioral"),
 });
 
 // Mock Interview table

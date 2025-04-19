@@ -1,4 +1,4 @@
-// Helper functions for interacting with our OpenAI API endpoints
+// Helper functions for interacting with our Gemini API endpoints
 
 // Analyze a mock interview recording/transcript
 export async function analyzeMockInterview(transcript: string, jobRole?: string): Promise<any> {

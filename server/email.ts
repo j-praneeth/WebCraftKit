@@ -6,8 +6,8 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false, // true for 465, false for other ports
   auth: {
-    user: process.env.EMAIL_USER || 'resumext.notifications@gmail.com', // fallback to default
-    pass: process.env.EMAIL_PASSWORD || 'your-app-password-here' // you'll need to replace this
+    user: process.env.EMAIL_USER || 'resunext.ai@gmail.com', // fallback to default
+    pass: process.env.EMAIL_PASSWORD || 'byiv bkhj ohfs ylle' // you'll need to replace this
   }
 });
 

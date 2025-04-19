@@ -1,4 +1,4 @@
-import { 
+import {
   User, InsertUser, 
   Resume, InsertResume,
   ResumeTemplate, InsertResumeTemplate,
@@ -10,16 +10,17 @@ import {
 } from "@shared/schema";
 
 export interface IStorage {
+  getUserByUsername(username: string): unknown;
   // User methods
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUser(id: string | number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByProvider(provider: string, providerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
   updateMockInterviewCount(userId: number): Promise<number>;
   
   // Resume Template methods
-  getResumeTemplate(id: number): Promise<ResumeTemplate | undefined>;
+  getResumeTemplate(id: number | string): Promise<ResumeTemplate | undefined>;
   getResumeTemplates(category?: string): Promise<ResumeTemplate[]>;
   createResumeTemplate(template: InsertResumeTemplate): Promise<ResumeTemplate>;
   
@@ -31,30 +32,31 @@ export interface IStorage {
   deleteResume(id: number | string): Promise<boolean>;
   
   // Cover Letter methods
-  getCoverLetter(id: number): Promise<CoverLetter | undefined>;
-  getCoverLettersByUserId(userId: number): Promise<CoverLetter[]>;
+  getCoverLetter(id: string | number): Promise<CoverLetter | undefined>;
+  getCoverLettersByUserId(userId: string | number): Promise<CoverLetter[]>;
   createCoverLetter(coverLetter: InsertCoverLetter): Promise<CoverLetter>;
-  updateCoverLetter(id: number, data: Partial<CoverLetter>): Promise<CoverLetter | undefined>;
-  deleteCoverLetter(id: number): Promise<boolean>;
+  updateCoverLetter(id: string | number, data: Partial<CoverLetter>): Promise<CoverLetter | undefined>;
+  deleteCoverLetter(id: string | number): Promise<boolean>;
   
   // Interview Question methods
-  getInterviewQuestion(id: number): Promise<InterviewQuestion | undefined>;
-  getInterviewQuestionsByUserId(userId: number): Promise<InterviewQuestion[]>;
+  getInterviewQuestion(id: string | number): Promise<InterviewQuestion | undefined>;
+  getInterviewQuestionsByUserId(userId: string | number): Promise<InterviewQuestion[]>;
   createInterviewQuestion(question: InsertInterviewQuestion): Promise<InterviewQuestion>;
   
   // Mock Interview methods
   getMockInterview(id: number | string): Promise<MockInterview | undefined>;
-  getMockInterviewsByUserId(userId: number): Promise<MockInterview[]>;
+  getMockInterviewsByUserId(userId: string | number): Promise<MockInterview[]>;
   createMockInterview(interview: InsertMockInterview): Promise<MockInterview>;
   updateMockInterview(id: number | string, data: Partial<MockInterview>): Promise<MockInterview | undefined>;
+  deleteMockInterview(id: number | string): Promise<boolean>;
   
   // Job Posting methods
-  getJobPosting(id: number): Promise<JobPosting | undefined>;
+  getJobPosting(id: string | number): Promise<JobPosting | undefined>;
   getJobPostings(limit?: number): Promise<JobPosting[]>;
   createJobPosting(job: InsertJobPosting): Promise<JobPosting>;
   
   // Organization methods
-  getOrganization(id: number): Promise<Organization | undefined>;
+  getOrganization(id: string | number): Promise<Organization | undefined>;
   createOrganization(organization: InsertOrganization): Promise<Organization>;
   
   // Pricing Plan methods (optional)
@@ -105,19 +107,20 @@ export class MemStorage implements IStorage {
   }
 
   // User methods
-  async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+  async getUser(id: string | number): Promise<User | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.users.get(numericId);
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-  
   async getUserByEmail(email: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
       (user) => user.email === email,
+    );
+  }
+
+  async getUserByProvider(provider: string, providerId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.provider === provider && user.providerId === providerId,
     );
   }
 
@@ -126,33 +129,38 @@ export class MemStorage implements IStorage {
     const createdAt = new Date();
     
     // Create with proper default values for optional fields
-    const user: User = { 
-      ...insertUser, 
-      id, 
-      createdAt,
+    const user: User = {
+      id,
+      email: insertUser.email,
+      password: insertUser.password ?? null,
       firstName: insertUser.firstName ?? null,
       lastName: insertUser.lastName ?? null,
-      role: insertUser.role || 'user', 
+      role: insertUser.role || 'user',
       plan: insertUser.plan || 'free',
       profilePicture: insertUser.profilePicture ?? null,
-      mockInterviewsCount: 0
+      mockInterviewsCount: 0,
+      provider: insertUser.provider || 'local',
+      providerId: insertUser.providerId ?? null,
+      createdAt
     };
     
     this.users.set(id, user);
     return user;
   }
   
-  async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
-    const user = await this.getUser(id);
+  async updateUser(id: string | number, data: Partial<User>): Promise<User | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    const user = await this.getUser(numericId);
     if (!user) return undefined;
     
     const updatedUser = { ...user, ...data };
-    this.users.set(id, updatedUser);
+    this.users.set(numericId, updatedUser);
     return updatedUser;
   }
   
-  async updateMockInterviewCount(userId: number): Promise<number> {
-    const user = await this.getUser(userId);
+  async updateMockInterviewCount(userId: string | number): Promise<number> {
+    const numericId = typeof userId === 'string' ? parseInt(userId) : userId;
+    const user = await this.getUser(numericId);
     if (!user) throw new Error("User not found");
     
     // Increment the count
@@ -160,14 +168,15 @@ export class MemStorage implements IStorage {
     const newCount = currentCount + 1;
     
     // Update the user
-    await this.updateUser(userId, { mockInterviewsCount: newCount });
+    await this.updateUser(numericId, { mockInterviewsCount: newCount });
     
     return newCount;
   }
   
   // Resume Template methods
-  async getResumeTemplate(id: number): Promise<ResumeTemplate | undefined> {
-    return this.resumeTemplates.get(id);
+  async getResumeTemplate(id: number | string): Promise<ResumeTemplate | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.resumeTemplates.get(numericId);
   }
   
   async getResumeTemplates(category?: string): Promise<ResumeTemplate[]> {
@@ -200,9 +209,9 @@ export class MemStorage implements IStorage {
   }
   
   async getResumesByUserId(userId: number | string): Promise<Resume[]> {
-    const userIdToCompare = userId.toString();
+    const numericUserId = typeof userId === 'string' ? parseInt(userId) : userId;
     return Array.from(this.resumes.values()).filter(
-      (resume) => resume.userId.toString() === userIdToCompare,
+      (resume) => resume.userId === String(numericUserId),
     );
   }
   
@@ -210,13 +219,15 @@ export class MemStorage implements IStorage {
     const id = this.resumeId++;
     const lastUpdated = new Date();
     
-    const resume: Resume = { 
-      ...insertResume, 
-      id, 
-      lastUpdated,
-      templateId: insertResume.templateId ?? null,
+    const resume: Resume = {
+      id,
+      userId: String(insertResume.userId),
+      title: insertResume.title,
+      content: insertResume.content as unknown,
+      templateId: insertResume.templateId ? String(insertResume.templateId) : null,
       atsScore: insertResume.atsScore ?? null,
-      isOptimized: insertResume.isOptimized ?? null 
+      lastUpdated,
+      isOptimized: insertResume.isOptimized ?? null
     };
     
     this.resumes.set(id, resume);
@@ -239,13 +250,15 @@ export class MemStorage implements IStorage {
   }
   
   // Cover Letter methods
-  async getCoverLetter(id: number): Promise<CoverLetter | undefined> {
-    return this.coverLetters.get(id);
+  async getCoverLetter(id: string | number): Promise<CoverLetter | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.coverLetters.get(numericId);
   }
   
-  async getCoverLettersByUserId(userId: number): Promise<CoverLetter[]> {
+  async getCoverLettersByUserId(userId: string | number): Promise<CoverLetter[]> {
+    const numericUserId = typeof userId === 'string' ? parseInt(userId) : userId;
     return Array.from(this.coverLetters.values()).filter(
-      (letter) => letter.userId === userId,
+      (letter) => letter.userId === numericUserId,
     );
   }
   
@@ -253,9 +266,9 @@ export class MemStorage implements IStorage {
     const id = this.coverLetterId++;
     const lastUpdated = new Date();
     
-    const coverLetter: CoverLetter = { 
-      ...insertCoverLetter, 
-      id, 
+    const coverLetter: CoverLetter = {
+      ...insertCoverLetter,
+      id,
       lastUpdated,
       jobTitle: insertCoverLetter.jobTitle ?? null,
       company: insertCoverLetter.company ?? null
@@ -265,27 +278,31 @@ export class MemStorage implements IStorage {
     return coverLetter;
   }
   
-  async updateCoverLetter(id: number, data: Partial<CoverLetter>): Promise<CoverLetter | undefined> {
-    const letter = await this.getCoverLetter(id);
+  async updateCoverLetter(id: string | number, data: Partial<CoverLetter>): Promise<CoverLetter | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    const letter = await this.getCoverLetter(numericId);
     if (!letter) return undefined;
     
     const updatedLetter = { ...letter, ...data, lastUpdated: new Date() };
-    this.coverLetters.set(id, updatedLetter);
+    this.coverLetters.set(numericId, updatedLetter);
     return updatedLetter;
   }
   
-  async deleteCoverLetter(id: number): Promise<boolean> {
-    return this.coverLetters.delete(id);
+  async deleteCoverLetter(id: string | number): Promise<boolean> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.coverLetters.delete(numericId);
   }
   
   // Interview Question methods
-  async getInterviewQuestion(id: number): Promise<InterviewQuestion | undefined> {
-    return this.interviewQuestions.get(id);
+  async getInterviewQuestion(id: string | number): Promise<InterviewQuestion | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.interviewQuestions.get(numericId);
   }
   
-  async getInterviewQuestionsByUserId(userId: number): Promise<InterviewQuestion[]> {
+  async getInterviewQuestionsByUserId(userId: string | number): Promise<InterviewQuestion[]> {
+    const numericUserId = typeof userId === 'string' ? parseInt(userId) : userId;
     return Array.from(this.interviewQuestions.values()).filter(
-      (question) => question.userId === userId,
+      (question) => question.userId === numericUserId,
     );
   }
   
@@ -293,12 +310,13 @@ export class MemStorage implements IStorage {
     const id = this.questionId++;
     const createdAt = new Date();
     
-    const question: InterviewQuestion = { 
-      ...insertQuestion, 
-      id, 
+    const question: InterviewQuestion = {
+      id,
+      userId: typeof insertQuestion.userId === 'string' ? parseInt(insertQuestion.userId) : insertQuestion.userId,
       createdAt,
-      suggestedAnswer: insertQuestion.suggestedAnswer ?? null,
-      category: insertQuestion.category ?? null
+      category: insertQuestion.category ?? null,
+      question: insertQuestion.question,
+      suggestedAnswer: insertQuestion.suggestedAnswer ?? null
     };
     
     this.interviewQuestions.set(id, question);
@@ -307,12 +325,14 @@ export class MemStorage implements IStorage {
   
   // Mock Interview methods
   async getMockInterview(id: number | string): Promise<MockInterview | undefined> {
-    return this.mockInterviews.get(typeof id === 'string' ? parseInt(id) : id);
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.mockInterviews.get(numericId);
   }
   
-  async getMockInterviewsByUserId(userId: number): Promise<MockInterview[]> {
+  async getMockInterviewsByUserId(userId: string | number): Promise<MockInterview[]> {
+    const numericUserId = typeof userId === 'string' ? parseInt(userId) : userId;
     return Array.from(this.mockInterviews.values()).filter(
-      (interview) => interview.userId === userId,
+      (interview) => interview.userId === String(numericUserId),
     );
   }
   
@@ -320,11 +340,12 @@ export class MemStorage implements IStorage {
     const id = this.interviewId++;
     const date = new Date();
     
-    const interview: MockInterview = { 
-      ...insertInterview, 
-      id, 
+    const interview: MockInterview = {
+      ...insertInterview,
+      id,
       date,
-      score: insertInterview.score ?? null, 
+      userId: String(insertInterview.userId),
+      score: insertInterview.score ?? null,
       feedback: insertInterview.feedback ?? null,
       transcript: insertInterview.transcript ?? null,
       videoUrl: insertInterview.videoUrl ?? null
@@ -343,10 +364,16 @@ export class MemStorage implements IStorage {
     this.mockInterviews.set(numericId, updatedInterview);
     return updatedInterview;
   }
+
+  async deleteMockInterview(id: number | string): Promise<boolean> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.mockInterviews.delete(numericId);
+  }
   
   // Job Posting methods
-  async getJobPosting(id: number): Promise<JobPosting | undefined> {
-    return this.jobPostings.get(id);
+  async getJobPosting(id: string | number): Promise<JobPosting | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.jobPostings.get(numericId);
   }
   
   async getJobPostings(limit: number = 10): Promise<JobPosting[]> {
@@ -358,9 +385,9 @@ export class MemStorage implements IStorage {
     const id = this.jobId++;
     const postDate = new Date();
     
-    const job: JobPosting = { 
-      ...insertJob, 
-      id, 
+    const job: JobPosting = {
+      ...insertJob,
+      id,
       postDate,
       location: insertJob.location ?? null,
       salary: insertJob.salary ?? null,
@@ -376,17 +403,18 @@ export class MemStorage implements IStorage {
   }
   
   // Organization methods
-  async getOrganization(id: number): Promise<Organization | undefined> {
-    return this.organizations.get(id);
+  async getOrganization(id: string | number): Promise<Organization | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.organizations.get(numericId);
   }
   
   async createOrganization(insertOrg: InsertOrganization): Promise<Organization> {
     const id = this.orgId++;
     const createdAt = new Date();
     
-    const org: Organization = { 
-      ...insertOrg, 
-      id, 
+    const org: Organization = {
+      ...insertOrg,
+      id,
       createdAt,
       subscription: insertOrg.subscription ?? null
     };
@@ -397,10 +425,9 @@ export class MemStorage implements IStorage {
   
   // Initialize dummy data for demonstration
   private initializeDummyData() {
-    // Create a demo user
-    const demoUser: User = {
+    // Create demo users
+    const localUser: User = {
       id: this.userId++,
-      username: 'alexmorgan',
       email: 'alex@example.com',
       password: 'password123', // Would be hashed in a real app
       firstName: 'Alex',
@@ -409,9 +436,43 @@ export class MemStorage implements IStorage {
       plan: 'free',
       createdAt: new Date(),
       profilePicture: null,
-      mockInterviewsCount: 0
+      mockInterviewsCount: 0,
+      provider: 'local',
+      providerId: null
     };
-    this.users.set(demoUser.id, demoUser);
+    this.users.set(localUser.id, localUser);
+
+    const googleUser: User = {
+      id: this.userId++,
+      email: 'sarah@gmail.com',
+      password: null,
+      firstName: 'Sarah',
+      lastName: 'Smith',
+      role: 'user',
+      plan: 'free',
+      createdAt: new Date(),
+      profilePicture: 'https://lh3.googleusercontent.com/photo.jpg',
+      mockInterviewsCount: 0,
+      provider: 'google',
+      providerId: 'google123'
+    };
+    this.users.set(googleUser.id, googleUser);
+
+    const linkedinUser: User = {
+      id: this.userId++,
+      email: 'john@outlook.com',
+      password: null,
+      firstName: 'John',
+      lastName: 'Doe',
+      role: 'user',
+      plan: 'premium',
+      createdAt: new Date(),
+      profilePicture: 'https://media.linkedin.com/photo.jpg',
+      mockInterviewsCount: 0,
+      provider: 'linkedin',
+      providerId: 'linkedin456'
+    };
+    this.users.set(linkedinUser.id, linkedinUser);
     
     // Create resume templates
     const templates = [
@@ -492,7 +553,7 @@ export class MemStorage implements IStorage {
     // Create some demo resumes
     const seniorDevResume: Resume = {
       id: this.resumeId++,
-      userId: demoUser.id,
+      userId: String(localUser.id), // Keep as string for resumes
       title: 'Senior Developer Resume',
       content: {
         personalInfo: {
@@ -519,7 +580,7 @@ export class MemStorage implements IStorage {
         ],
         skills: ['React', 'Node.js', 'TypeScript', 'AWS', 'Docker']
       },
-      templateId: 1, // Modern Professional template
+      templateId: '1', // Modern Professional template
       atsScore: 92,
       lastUpdated: new Date(),
       isOptimized: true
@@ -528,7 +589,7 @@ export class MemStorage implements IStorage {
     
     const pmResume: Resume = {
       id: this.resumeId++,
-      userId: demoUser.id,
+      userId: String(localUser.id),
       title: 'Project Manager CV',
       content: {
         personalInfo: {
@@ -560,7 +621,7 @@ export class MemStorage implements IStorage {
         ],
         skills: ['Project Management', 'Agile', 'Scrum', 'Budgeting', 'Team Leadership']
       },
-      templateId: 2, // Executive Suite template
+      templateId: '2', // Executive Suite template
       atsScore: 68,
       lastUpdated: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 1 week ago
       isOptimized: false
@@ -571,7 +632,7 @@ export class MemStorage implements IStorage {
     const questions = [
       {
         id: this.questionId++,
-        userId: demoUser.id,
+        userId: localUser.id,
         question: 'Tell me about a challenging project you worked on and how you overcame obstacles.',
         suggestedAnswer: 'When describing a challenging project, use the STAR method: Situation, Task, Action, and Result. Focus on how you identified problems, collaborated with team members, and implemented solutions that led to successful outcomes.',
         category: 'behavioral',
@@ -579,7 +640,7 @@ export class MemStorage implements IStorage {
       },
       {
         id: this.questionId++,
-        userId: demoUser.id,
+        userId: localUser.id,  // Already a number from creation
         question: 'What experience do you have with agile development methodologies?',
         suggestedAnswer: 'Describe your specific experience with agile frameworks like Scrum or Kanban. Mention your role in sprint planning, daily standups, and retrospectives. Highlight how you have used agile principles to improve team productivity and product quality.',
         category: 'technical',
@@ -587,7 +648,7 @@ export class MemStorage implements IStorage {
       },
       {
         id: this.questionId++,
-        userId: demoUser.id,
+        userId: localUser.id,
         question: 'How do you handle conflicts within a team?',
         suggestedAnswer: 'Explain your approach to conflict resolution: listening actively to all perspectives, focusing on facts rather than emotions, finding common ground, and working toward mutually beneficial solutions. Provide a specific example that demonstrates your conflict resolution skills.',
         category: 'behavioral',
@@ -600,7 +661,7 @@ export class MemStorage implements IStorage {
     // Create a mock interview result
     const mockInterview: MockInterview = {
       id: this.interviewId++,
-      userId: demoUser.id,
+      userId: String(localUser.id), // Keep as string for mock interviews
       title: 'Full Stack Developer Interview',
       score: 76,
       feedback: {

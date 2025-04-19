@@ -5,7 +5,120 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { analyzeMockInterview } from '@/lib/openai';
-import { FiMic, FiMicOff, FiVideo, FiVideoOff } from 'react-icons/fi';
+import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiPhoneOff, FiVolume2, FiVolumeX } from 'react-icons/fi';
+
+// Speech synthesis utility class
+class SpeechService {
+  private synthesis: SpeechSynthesis;
+  private voice: SpeechSynthesisVoice | null = null;
+  private speaking: boolean = false;
+  private initialized: boolean = false;
+
+  constructor() {
+    this.synthesis = window.speechSynthesis;
+  }
+
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    
+    // Get available voices
+    const voices = this.synthesis.getVoices();
+    
+    // If no voices available, wait for voiceschanged event
+    if (voices.length === 0) {
+      await new Promise<void>((resolve) => {
+        const handler = () => {
+          this.synthesis.removeEventListener('voiceschanged', handler);
+          resolve();
+        };
+        this.synthesis.addEventListener('voiceschanged', handler);
+      });
+    }
+
+    // Select the first available voice
+    const availableVoices = this.synthesis.getVoices();
+    this.voice = availableVoices[0] || null;
+    
+    if (this.voice) {
+      console.log('Selected voice:', this.voice.name);
+      this.initialized = true;
+    } else {
+      console.warn('No voices available');
+    }
+  }
+
+  async speak(
+    text: string, 
+    onStart?: () => void, 
+    onEnd?: () => void, 
+    onError?: (error: string) => void
+  ): Promise<void> {
+    try {
+      // Ensure initialization
+      if (!this.initialized) {
+        await this.init();
+      }
+
+      // If already speaking, stop current speech
+      if (this.speaking) {
+        this.stop();
+      }
+
+      // Create utterance
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Use selected voice or default
+      if (this.voice) {
+        utterance.voice = this.voice;
+      }
+      
+      // Set basic properties
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      // Add event listeners
+      utterance.onstart = () => {
+        this.speaking = true;
+        if (onStart) onStart();
+      };
+
+      utterance.onend = () => {
+        this.speaking = false;
+        if (onEnd) onEnd();
+      };
+
+      utterance.onerror = (event) => {
+        this.speaking = false;
+        console.error('Speech synthesis error:', event);
+        if (onError) onError(event.error);
+      };
+
+      // Start speaking
+      this.synthesis.speak(utterance);
+
+    } catch (error) {
+      this.speaking = false;
+      console.error('Speech synthesis error:', error);
+      if (onError) onError(error instanceof Error ? error.message : 'Speech synthesis failed');
+    }
+  }
+
+  stop(): void {
+    this.synthesis.cancel();
+    this.speaking = false;
+  }
+
+  isSpeaking(): boolean {
+    return this.speaking;
+  }
+
+  reset(): void {
+    this.stop();
+    this.initialized = false;
+    this.voice = null;
+  }
+}
 
 interface VideoInterviewSimulatorProps {
   jobRole: string;
@@ -13,11 +126,212 @@ interface VideoInterviewSimulatorProps {
   onComplete?: (result: any) => void;
 }
 
-type Message = {
-  role: 'interviewer' | 'user';
+interface Message {
+  id: string;
   content: string;
-  timestamp: Date;
+  sender: 'user' | 'ai';
+  timestamp: number;
+}
+
+// Add this CSS class at the top of the file after the imports
+const scrollbarStyles = `
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+  }
+`;
+
+// Update the main container styles for better responsiveness
+const containerStyles = {
+  height: '100vh',
+  width: '100%',
+  display: 'flex',
+  position: 'relative' as const,
+  overflow: 'hidden',
+  backgroundColor: '#1a1a1a',
+  maxWidth: '100vw'
 };
+
+// Update the main content area styles for better responsiveness
+const mainContentStyles = {
+  flex: '1',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  position: 'relative' as const,
+  overflow: 'hidden',
+  padding: '1rem',
+  minWidth: 0 // Prevent flex items from overflowing
+};
+
+// Update the video container styles for full-width layout
+const videoContainerStyles = {
+  flex: '1',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  position: 'relative' as const,
+  overflow: 'hidden',
+  gap: '1rem',
+  minHeight: 0
+};
+
+// Update the video grid styles for full-width layout
+const videoGridStyles = {
+  position: 'relative' as const,
+  width: '100%',
+  height: '100%',
+  flex: 1,
+  minHeight: 0
+};
+
+// Update the transcript container styles for better responsiveness
+const transcriptContainerStyles = {
+  width: '320px',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  backgroundColor: '#2d2d2d',
+  borderLeft: '1px solid #404040',
+  '@media (max-width: 768px)': {
+    width: '280px'
+  }
+};
+
+// Add control bar styles
+const controlBarStyles = {
+  position: 'absolute' as const,
+  bottom: '2rem',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  display: 'flex',
+  gap: '1rem',
+  padding: '0.75rem',
+  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  borderRadius: '2rem',
+  zIndex: 10
+};
+
+// Add control button styles
+const controlButtonStyles = {
+  width: '3rem',
+  height: '3rem',
+  borderRadius: '50%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  backgroundColor: '#404040',
+  color: 'white',
+  border: 'none',
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+  ':hover': {
+    backgroundColor: '#525252'
+  }
+};
+
+// Update the video wrapper styles for full-width layout
+const videoWrapperStyles = {
+  position: 'relative' as const,
+  width: '100%',
+  height: '100%',
+  backgroundColor: '#000',
+  borderRadius: '1.5rem',
+  overflow: 'hidden',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+};
+
+// Update the AI avatar styles for overlay
+const aiAvatarStyles = {
+  position: 'absolute' as const,
+  top: '1.5rem',
+  right: '1.5rem',
+  width: '240px',
+  height: '180px',
+  backgroundColor: '#1a1a1a',
+  borderRadius: '1rem',
+  overflow: 'hidden',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.4)',
+  border: '2px solid rgba(255, 255, 255, 0.1)',
+  zIndex: 2
+};
+
+// Update the messages container styles
+const messagesContainerStyles = {
+  flex: '1',
+  overflowY: 'auto' as const,
+  padding: '1rem',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '1rem',
+  scrollBehavior: 'smooth' as const
+};
+
+// Add feedback container styles
+const feedbackContainerStyles = {
+  height: '100vh',
+  overflow: 'auto',
+  padding: '2rem',
+  backgroundColor: '#1a1a1a',
+  color: 'white'
+};
+
+const feedbackSectionStyles = {
+  maxWidth: '800px',
+  margin: '0 auto',
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '1.5rem'
+};
+
+const feedbackCardStyles = {
+  backgroundColor: '#2d2d2d',
+  borderRadius: '1rem',
+  padding: '1.5rem',
+  border: '1px solid #404040'
+};
+
+// Add interface for conversation pairs
+interface ConversationPair {
+  question: string;
+  answer: string;
+}
+
+// Add interface for feedback
+interface QuestionFeedback {
+  question: string;
+  answer: string;
+  feedback: string;
+}
+
+// Add voice activity indicator styles
+const voiceActivityStyles = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  padding: '0.5rem',
+  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  borderRadius: '0.5rem',
+  color: 'white',
+  fontSize: '0.875rem',
+  zIndex: 2
+};
+
+// Add base64 encoded default avatar
+const defaultAvatar = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGNpcmNsZSBjeD0iMTAwIiBjeT0iMTAwIiByPSIxMDAiIGZpbGw9IiMyRDJEMkQiLz4KICA8Y2lyY2xlIGN4PSIxMDAiIGN5PSI4NSIgcj0iNDAiIGZpbGw9IiM0QjU1NjMiLz4KICA8cGF0aCBkPSJNNDAgMTYwQzQwIDE0MC4xMTggNjcuNjY2NyAxMjUgMTAwIDEyNUMxMzIuMzM0IDEyNSAxNjAgMTQwLjExOCAxNjAgMTYwQzE2MCAxNzkuODgyIDEzMi4zMzQgMTk1IDEwMCAxOTVDNjcuNjY2NyAxOTUgNDAgMTc5Ljg4MiA0MCAxNjBaIiBmaWxsPSIjNEI1NTYzIi8+Cjwvc3ZnPgo=`;
 
 export function VideoInterviewSimulator({ 
   jobRole, 
@@ -38,6 +352,7 @@ export function VideoInterviewSimulator({
   const [userTranscript, setUserTranscript] = useState('');
   const [interviewerSpeaking, setInterviewerSpeaking] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [isMirrored, setIsMirrored] = useState(true);
   
   // References
   const socketRef = useRef<WebSocket | null>(null);
@@ -46,8 +361,10 @@ export function VideoInterviewSimulator({
   const userVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // SpeechRecognition reference
+  
+  // Create speech service instance
+  const speechServiceRef = useRef<SpeechService | null>(null);
   
   // Calculate time remaining in seconds
   const totalTime = duration * 60;
@@ -60,6 +377,53 @@ export function VideoInterviewSimulator({
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Add state for fullscreen mode
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Function to enter fullscreen
+  const enterFullscreen = async () => {
+    try {
+      if (containerRef.current) {
+        if (containerRef.current.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        } else if ((containerRef.current as any).webkitRequestFullscreen) {
+          await (containerRef.current as any).webkitRequestFullscreen();
+        } else if ((containerRef.current as any).msRequestFullscreen) {
+          await (containerRef.current as any).msRequestFullscreen();
+        }
+        setIsFullscreen(true);
+      }
+    } catch (error) {
+      console.error('Error entering fullscreen:', error);
+    }
+  };
+
+  // Function to exit fullscreen
+  const exitFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  // Handle fullscreen change
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // Start interview in fullscreen
+  useEffect(() => {
+    if (!isFullscreen) {
+      enterFullscreen();
+    }
+  }, []);
 
   // Initialize camera and microphone
   const setupCamera = async () => {
@@ -83,31 +447,22 @@ export function VideoInterviewSimulator({
       
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = stream;
-        // Ensure video plays by explicitly calling play()
         await userVideoRef.current.play().catch(err => {
           console.error("Error playing video:", err);
         });
       }
       
       setIsCameraOn(true);
-      setFaceDetected(true); // Set face detected by default
+      setFaceDetected(true);
+      setIsRecording(true); // Automatically enable microphone
       
       toast({
         title: "Camera and microphone connected",
         description: "You're all set for your video interview.",
       });
 
-      // Initialize speech recognition for real-time transcription
-      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        // Speech recognition is supported
+      // Initialize speech recognition
         initializeSpeechRecognition();
-      } else {
-        toast({
-          title: "Speech Recognition Not Supported",
-          description: "Your browser doesn't support speech recognition. Please use Chrome or Edge for the best experience.",
-          variant: "destructive"
-        });
-      }
       
       return true;
     } catch (error) {
@@ -127,107 +482,117 @@ export function VideoInterviewSimulator({
     if (!SpeechRecognition) return;
     
     try {
+      // Stop existing recognition instance if it exists
+      if (speechRecognitionRef.current) {
+        try {
+          speechRecognitionRef.current.stop();
+        } catch (error) {
+          console.error("Error stopping existing speech recognition:", error);
+        }
+      }
+
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
       
-      // Store the recognition instance to enable restart if needed
+      // Store the recognition instance
       speechRecognitionRef.current = recognition;
+
+      let finalTranscript = '';
+      let isSubmitting = false;
+
+      recognition.onstart = () => {
+        console.log("Speech recognition started");
+        setIsListening(true);
+        setIsMicActive(true);
+      };
       
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let transcript = '';
+        if (interviewerSpeaking) return; // Ignore results while AI is speaking
+        
         let interimTranscript = '';
-        let isFinalResult = false;
         
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          
           if (result.isFinal) {
-            transcript += result[0].transcript + ' ';
-            isFinalResult = true;
-          } else {
-            interimTranscript += result[0].transcript + ' ';
-          }
-        }
-        
-        // Update UI with the final and interim transcripts
-        if (transcript || interimTranscript) {
-          const combinedTranscript = transcript.trim();
-          
-          if (combinedTranscript) {
-            setUserTranscript(prev => {
-              // Clean up whitespace to avoid double spaces
-              const cleanedPrev = prev.trim();
-              return cleanedPrev ? `${cleanedPrev} ${combinedTranscript}` : combinedTranscript;
-            });
+            finalTranscript += result[0].transcript + ' ';
+            // Update UI immediately with final transcript
+            setUserTranscript(finalTranscript.trim());
             
-            setCurrentAnswer(prev => {
-              const cleanedPrev = prev.trim();
-              return cleanedPrev ? `${cleanedPrev} ${combinedTranscript}` : combinedTranscript;
-            });
-          }
-          
-          // Show interim results in UI if needed
-          if (interimTranscript) {
-            // Could add interim transcript display if needed
-            console.log("Interim transcript:", interimTranscript);
-          }
-          
-          // Auto-submit immediately when we have a final result and the interviewer is not speaking
-          if (isFinalResult && !interviewerSpeaking && (combinedTranscript.trim() || userTranscript.trim())) {
-            // Submit immediately without delay
-            console.log("Auto-submitting answer immediately");
-            submitAnswer();
-          }
-        }
-      };
-      
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error("Speech recognition error:", event.error);
-        
-        // Handle "no-speech" error by restarting recognition after a short delay
-        if (event.error === 'no-speech') {
-          setTimeout(() => {
-            if (isRecording && speechRecognitionRef.current) {
-              try {
-                speechRecognitionRef.current.stop();
-              } catch (e) {
-                console.error("Error stopping speech recognition:", e);
-              }
-              
+            // Submit after a short delay if not already submitting
+            if (!isSubmitting && !interviewerSpeaking) {
+              isSubmitting = true;
               setTimeout(() => {
-                try {
-                  speechRecognitionRef.current?.start();
-                } catch (e) {
-                  console.error("Error restarting speech recognition:", e);
-                }
-              }, 500);
+                submitAnswer(finalTranscript.trim());
+                finalTranscript = ''; // Clear the transcript after submission
+                isSubmitting = false;
+              }, 800);
             }
-          }, 2000);
+          } else {
+            interimTranscript += result[0].transcript;
+            // Show interim results immediately
+            setUserTranscript(finalTranscript + interimTranscript);
+          }
         }
       };
-      
+
       recognition.onend = () => {
         console.log("Speech recognition ended");
+        setIsListening(false);
         
-        // Auto-restart if recording is still enabled
-        if (isRecording) {
+        // If there's any remaining transcript, submit it
+        if (finalTranscript.trim() && !interviewerSpeaking && !isSubmitting) {
+          submitAnswer(finalTranscript.trim());
+          finalTranscript = '';
+        }
+        
+        // Auto-restart if recording is still enabled and not speaking
+        if (isRecording && !interviewerSpeaking) {
           try {
             setTimeout(() => {
-              if (isRecording && speechRecognitionRef.current) {
+              if (isRecording && !interviewerSpeaking && speechRecognitionRef.current) {
                 speechRecognitionRef.current.start();
-                console.log("Speech recognition restarted");
+                setIsListening(true);
+                setIsMicActive(true);
               }
-            }, 500);
+            }, 100);
           } catch (error) {
             console.error("Error restarting speech recognition:", error);
           }
         }
       };
       
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        console.error("Speech recognition error:", event.error);
+        setIsListening(false);
+        
+        if (event.error === 'no-speech') {
+          // Restart recognition on no-speech error if still recording
+          if (isRecording && !interviewerSpeaking) {
+            try {
+              recognition.stop();
+              setTimeout(() => {
+                if (isRecording && !interviewerSpeaking) {
+                  recognition.start();
+                  setIsListening(true);
+                  setIsMicActive(true);
+                }
+              }, 100);
+          } catch (error) {
+              console.error("Error handling no-speech error:", error);
+            }
+          }
+        }
+      };
+      
+      // Start recognition if recording is enabled and AI is not speaking
+      if (isRecording && !interviewerSpeaking) {
       recognition.start();
-      setIsRecording(true);
+        setIsListening(true);
+        setIsMicActive(true);
+      }
+      
     } catch (error) {
       console.error("Failed to initialize speech recognition:", error);
       toast({
@@ -246,83 +611,50 @@ export function VideoInterviewSimulator({
     setInterviewerSpeaking(false);
   };
   
-  // Initialize voices for speech synthesis
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  
-  // Load voices when component mounts and when voices change
+  // Initialize speech service
   useEffect(() => {
-    const loadVoices = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      if (availableVoices.length > 0) {
-        setVoices(availableVoices);
-      }
-    };
-    
-    // Load voices right away
-    loadVoices();
-    
-    // Also set up an event listener for when voices change (needed in some browsers)
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
+    speechServiceRef.current = new SpeechService();
     
     return () => {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.onvoiceschanged = null;
+      if (speechServiceRef.current) {
+        speechServiceRef.current.reset();
       }
     };
   }, []);
   
-  // Speak the given text using speech synthesis
-  const speakText = (text: string) => {
-    if (!('speechSynthesis' in window)) {
-      console.error("Speech synthesis not supported");
-      return;
-    }
-    
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Try to find a professional sounding voice
-    let preferredVoice = voices.find(voice => 
-      voice.name.includes('Daniel') || 
-      voice.name.includes('Google UK English Male') ||
-      voice.name.includes('Microsoft David')
-    );
-    
-    // Fallback to any male voice if preferred voices not found
-    if (!preferredVoice) {
-      preferredVoice = voices.find(voice => 
-        voice.name.toLowerCase().includes('male') || 
-        voice.name.includes('David') ||
-        voice.name.includes('Mark') ||
-        voice.name.includes('James')
-      );
-    }
-    
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-      console.log(`Using voice: ${preferredVoice.name}`);
-    } else {
-      console.log("No preferred voice found, using default voice");
-    }
-    
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    
-    utterance.onstart = () => {
+  // Audio context for playing TTS audio
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+  // Update the interviewerExpressions with the default avatar
+  const interviewerExpressions = {
+    neutral: defaultAvatar,
+    listening: defaultAvatar,
+    speaking: defaultAvatar,
+    smiling: defaultAvatar,
+    thinking: defaultAvatar
+  };
+
+  // Add interviewer state
+  const [interviewerMood, setInterviewerMood] = useState<keyof typeof interviewerExpressions>('neutral');
+  const [isListening, setIsListening] = useState(false);
+
+  // Update the message display to show typing indicator
+  const [isTyping, setIsTyping] = useState(false);
+
+  // Add state for actual microphone status
+  const [isMicActive, setIsMicActive] = useState(false);
+
+  // Update the speakText function to better handle microphone state
+  const speakText = async (text: string, mood: keyof typeof interviewerExpressions = 'speaking') => {
+    if (!text || !speechServiceRef.current) return;
+
+    try {
       setInterviewerSpeaking(true);
-      
-      // Mute user's microphone when AI is speaking
-      if (streamRef.current) {
-        streamRef.current.getAudioTracks().forEach(track => {
-          track.enabled = false;
-        });
-      }
-      
-      // Also pause speech recognition while AI is speaking
+      setInterviewerMood(mood);
+      setIsMicActive(false);
+
+      // Stop speech recognition while AI is speaking
       if (speechRecognitionRef.current) {
         try {
           speechRecognitionRef.current.stop();
@@ -330,59 +662,98 @@ export function VideoInterviewSimulator({
           console.error("Error stopping speech recognition:", error);
         }
       }
-    };
-    
-    utterance.onend = () => {
-      setInterviewerSpeaking(false);
-      
-      // Unmute user's microphone when AI stops speaking
+
+      // Mute user's microphone when AI is speaking
       if (streamRef.current) {
+        streamRef.current.getAudioTracks().forEach(track => {
+          track.enabled = false;
+        });
+      }
+
+      await speechServiceRef.current.speak(
+        text,
+        // onStart
+        () => {
+          setInterviewerSpeaking(true);
+          setInterviewerMood(mood);
+          setIsMicActive(false);
+        },
+        // onEnd
+        () => {
+        setInterviewerSpeaking(false);
+          setInterviewerMood('listening');
+          
+          // Re-enable user's microphone and speech recognition
+          if (streamRef.current && isRecording) {
+          streamRef.current.getAudioTracks().forEach(track => {
+            track.enabled = true;
+          });
+            setIsMicActive(true);
+            
+            // Ensure speech recognition is restarted
+            if (speechRecognitionRef.current) {
+              try {
+                speechRecognitionRef.current.stop(); // Stop first to ensure clean state
+            setTimeout(() => {
+                  if (isRecording && speechRecognitionRef.current) {
+                    speechRecognitionRef.current.start();
+                    setIsListening(true);
+                  }
+                }, 100); // Reduced delay for more immediate response
+          } catch (error) {
+            console.error("Error restarting speech recognition:", error);
+                // Try to reinitialize speech recognition
+                initializeSpeechRecognition();
+              }
+            } else {
+              // If speech recognition reference is lost, reinitialize it
+              initializeSpeechRecognition();
+            }
+          }
+        },
+        // onError
+        (error) => {
+          console.error("Speech synthesis error:", error);
+        setInterviewerSpeaking(false);
+          setInterviewerMood('neutral');
+          
+          // Re-enable user's microphone on error
+          if (streamRef.current && isRecording) {
+          streamRef.current.getAudioTracks().forEach(track => {
+            track.enabled = true;
+          });
+            setIsMicActive(true);
+            
+        // Restart speech recognition on error
+            if (speechRecognitionRef.current) {
+          try {
+                speechRecognitionRef.current.start();
+                setIsListening(true);
+          } catch (error) {
+                console.error("Error restarting speech recognition after error:", error);
+                initializeSpeechRecognition();
+              }
+            }
+          }
+        }
+      );
+    } catch (error) {
+      console.error("Speech synthesis error:", error);
+      setInterviewerSpeaking(false);
+      setInterviewerMood('neutral');
+      
+      // Re-enable user's microphone on error
+      if (streamRef.current && isRecording) {
         streamRef.current.getAudioTracks().forEach(track => {
           track.enabled = true;
         });
+        setIsMicActive(true);
+        initializeSpeechRecognition();
       }
-      
-      // Restart speech recognition
-      if (speechRecognitionRef.current && isRecording) {
-        try {
-          setTimeout(() => {
-            speechRecognitionRef.current?.start();
-          }, 300); // Small delay to ensure clean transition
-        } catch (error) {
-          console.error("Error restarting speech recognition:", error);
-        }
-      }
-    };
-    
-    // Fix for some browsers where speech can sometimes fail silently
-    utterance.onerror = (event) => {
-      console.error("Speech synthesis error:", event);
-      setInterviewerSpeaking(false);
-      
-      // Ensure microphone is re-enabled if there's an error
-      if (streamRef.current) {
-        streamRef.current.getAudioTracks().forEach(track => {
-          track.enabled = true;
-        });
-      }
-      
-      // Restart speech recognition on error
-      if (speechRecognitionRef.current && isRecording) {
-        try {
-          setTimeout(() => {
-            speechRecognitionRef.current?.start();
-          }, 300);
-        } catch (error) {
-          console.error("Error restarting speech recognition after synthesis error:", error);
-        }
-      }
-    };
-    
-    speechSynthesisRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    }
   };
   
-  // Initialize websocket connection
+  // Initialize interview
   useEffect(() => {
     const initializeInterview = async () => {
       // First set up camera and mic
@@ -392,18 +763,13 @@ export function VideoInterviewSimulator({
       // Set up the interviewer avatar
       setupInterviewerAvatar();
       
-      // Connect to WebSocket server
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-      
-      console.log('Connecting to WebSocket server at:', wsUrl);
-      
       // Start with an initial welcome message
-      const welcomeMessage = `Hello! I'll be conducting your interview for the ${jobRole} position today. I'll ask you several questions to assess your skills and experience. Please respond as if you're in a real interview. Let's begin in a moment...`;
+      const welcomeMessage = `Hi, I'm Ruby! I'll be conducting your interview for the ${jobRole} position today. I'm excited to learn more about your experience and skills. I'll ask you questions, and you can respond naturally just like in a real interview. Ready to begin?`;
       setMessages([{
-        role: 'interviewer',
+        id: 'welcome-message',
         content: welcomeMessage,
-        timestamp: new Date()
+        sender: 'ai',
+        timestamp: Date.now()
       }]);
       
       // Speak the welcome message
@@ -421,8 +787,10 @@ export function VideoInterviewSimulator({
         });
       }, 1000);
       
-      // Add a delay to ensure the server is ready
-      const connectionTimeout = setTimeout(() => {
+      // Connect to WebSocket server
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      
         try {
           const socket = new WebSocket(wsUrl);
           socketRef.current = socket;
@@ -445,41 +813,37 @@ export function VideoInterviewSimulator({
             try {
               const data = JSON.parse(event.data);
               
-              if (data.type === 'question') {
-                // Received a new interview question
-                const questionMessage = {
-                  role: 'interviewer' as const,
+            if (data.type === 'question' || data.type === 'feedback' || data.type === 'follow_up') {
+              // Show typing indicator
+              setIsTyping(true);
+              
+              // Add a natural delay before showing the message
+              setTimeout(() => {
+                setIsTyping(false);
+                
+                const message: Message = {
+                  id: Date.now().toString(),
                   content: data.content,
-                  timestamp: new Date()
+                  sender: 'ai',
+                  timestamp: Date.now()
                 };
                 
-                setMessages(prev => [...prev, questionMessage]);
+                setMessages(prev => [...prev, message]);
                 
-                // Speak the question
-                speakText(data.content);
-              }
-              else if (data.type === 'follow_up') {
-                // Received a follow-up comment or question
-                const followUpMessage = {
-                  role: 'interviewer' as const,
-                  content: data.content,
-                  timestamp: new Date()
-                };
-                
-                setMessages(prev => [...prev, followUpMessage]);
-                
-                // Speak the follow-up
-                speakText(data.content);
+                // Speak with appropriate mood
+                speakText(data.content, data.mood || 'speaking');
+              }, Math.random() * 1000 + 500); // Random delay between 500-1500ms
               }
               else if (data.type === 'error') {
                 toast({
                   title: "Interview Error",
-                  description: data.message,
+                description: data.message || "An error occurred during the interview.",
                   variant: "destructive"
                 });
               }
             } catch (error) {
               console.error("Error parsing WebSocket message:", error);
+            // handleCommunicationError(); // This function is not defined in the provided context
             }
           };
           
@@ -506,29 +870,23 @@ export function VideoInterviewSimulator({
             variant: "destructive"
           });
         }
-      }, 1000);
+    };
       
-      // Clean up function
+    initializeInterview();
+    
+    // Cleanup
       return () => {
-        if (connectionTimeout) clearTimeout(connectionTimeout);
         if (timerRef.current) clearInterval(timerRef.current);
         if (socketRef.current) {
           socketRef.current.close();
         }
-        
-        // Stop media tracks
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
         }
-        
-        // Cancel any ongoing speech
-        if (window.speechSynthesis) {
-          window.speechSynthesis.cancel();
-        }
-      };
+      if (speechServiceRef.current) {
+        speechServiceRef.current.stop();
+      }
     };
-    
-    initializeInterview();
   }, [jobRole, totalTime, user]);
   
   // Scroll to bottom whenever messages change
@@ -540,40 +898,32 @@ export function VideoInterviewSimulator({
   const autoSubmitTimeoutRef = useRef<number | null>(null);
   
   // Submit user's answer to the current question
-  const submitAnswer = () => {
-    // If the user didn't type or say anything, don't submit
-    if (!currentAnswer.trim() && !userTranscript.trim()) return;
+  const submitAnswer = (transcript: string = '') => {
+    const finalAnswer = transcript || userTranscript.trim();
+    if (!finalAnswer) return;
     
-    // Use transcript if available, otherwise use typed answer
-    const finalAnswer = userTranscript.trim() || currentAnswer.trim();
-    
-    // Add user's message to the chat
+    // Add user's message to the chat immediately
     setMessages(prev => [
       ...prev, 
       { 
-        role: 'user', 
+        id: Date.now().toString(),
         content: finalAnswer, 
-        timestamp: new Date() 
+        sender: 'user', 
+        timestamp: Date.now() 
       }
     ]);
     
     // Send answer to the server
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
         type: 'answer',
         content: finalAnswer,
       }));
     }
     
-    // Clear inputs
-    setCurrentAnswer('');
+    // Clear the transcript
     setUserTranscript('');
-    
-    // Clear any pending auto-submit
-    if (autoSubmitTimeoutRef.current) {
-      clearTimeout(autoSubmitTimeoutRef.current);
-      autoSubmitTimeoutRef.current = null;
-    }
+    setCurrentAnswer('');
   };
   
   // Handle key press in textarea
@@ -600,17 +950,29 @@ export function VideoInterviewSimulator({
 
   // Toggle microphone
   const toggleMicrophone = () => {
+    if (interviewerSpeaking) {
+      // Don't allow enabling mic while AI is speaking
+      toast({
+        title: "Cannot Enable Microphone",
+        description: "Please wait for the AI interviewer to finish speaking.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (isRecording) {
       // Turn off microphone
       if (streamRef.current) {
         streamRef.current.getAudioTracks().forEach(track => track.enabled = false);
         setIsRecording(false);
+        setIsMicActive(false);
       }
     } else {
       // Turn on microphone
       if (streamRef.current) {
         streamRef.current.getAudioTracks().forEach(track => track.enabled = true);
         setIsRecording(true);
+        setIsMicActive(true);
         initializeSpeechRecognition();
       }
     }
@@ -624,9 +986,12 @@ export function VideoInterviewSimulator({
       timerRef.current = null;
     }
     
-    // Stop any ongoing speech
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+    // Stop any ongoing audio playback
+    if (audioSourceRef.current) {
+      audioSourceRef.current.stop();
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
     }
     
     // Close WebSocket connection
@@ -649,9 +1014,10 @@ export function VideoInterviewSimulator({
     setMessages(prev => [
       ...prev,
       {
-        role: 'interviewer',
+        id: Date.now().toString(),
         content: endMessage,
-        timestamp: new Date()
+        sender: 'ai',
+        timestamp: Date.now()
       }
     ]);
     
@@ -660,17 +1026,28 @@ export function VideoInterviewSimulator({
     
     setIsFinished(true);
     
-    // Analyze the interview
+    // Build the transcript with question-answer pairs outside try-catch
+    const conversationPairs: ConversationPair[] = messages.reduce((pairs: ConversationPair[], msg, index) => {
+      if (msg.sender === 'ai' && messages[index + 1]?.sender === 'user') {
+        pairs.push({
+          question: msg.content,
+          answer: messages[index + 1].content
+        });
+      }
+      return pairs;
+    }, []);
+
     try {
       setIsAnalyzing(true);
       
-      // Build the transcript from messages
-      const transcript = messages
-        .map(msg => `${msg.role.toUpperCase()}: ${msg.content}`)
-        .join('\n\n');
-      
-      // Send to API for analysis with a timeout
-      const analysisPromise = analyzeMockInterview(transcript, jobRole);
+      // Send to API for analysis
+      const analysisPromise = analyzeMockInterview(
+        JSON.stringify({ 
+          jobRole,
+          conversationPairs
+        }),
+        jobRole
+      );
       
       // Set a timeout to handle long-running requests
       const timeoutPromise = new Promise((_, reject) => {
@@ -683,7 +1060,7 @@ export function VideoInterviewSimulator({
       const result = await Promise.race([analysisPromise, timeoutPromise])
         .catch((error) => {
           console.error("Error or timeout in interview analysis:", error);
-          // Return a basic analysis result if the API call fails
+          // Return a basic analysis result with meaningful feedback
           return {
             overallScore: 7,
             overallFeedback: "Your interview demonstrated good communication skills. The system encountered an issue with the detailed analysis, but your responses have been saved.",
@@ -693,26 +1070,35 @@ export function VideoInterviewSimulator({
               "Professional demeanor maintained throughout"
             ],
             improvementAreas: [
-              "Continue practicing more specific examples for key questions",
-              "Consider preparing more detailed technical responses",
-              "Work on concisely highlighting your achievements"
+              "Consider providing more specific examples",
+              "Focus on quantifiable achievements",
+              "Elaborate on technical details when relevant"
             ],
-            questionFeedback: messages
-              .filter(msg => msg.role === 'interviewer')
-              .map(msg => ({
-                question: msg.content,
-                feedback: "Your response to this question was recorded. Continue practicing similar questions."
+            questionFeedback: conversationPairs.map((pair: ConversationPair) => ({
+              question: pair.question,
+              answer: pair.answer,
+              feedback: generateDefaultFeedback(pair.question, pair.answer)
               }))
           };
         });
       
-      setAnalysis(result);
+      // Update the analysis structure with proper types and preserve actual feedback
+      const updatedResult = {
+        ...result,
+        questionFeedback: result.questionFeedback.map((feedback: any, index: number): QuestionFeedback => ({
+          question: conversationPairs[index].question,
+          answer: conversationPairs[index].answer,
+          feedback: feedback.feedback || generateDefaultFeedback(conversationPairs[index].question, conversationPairs[index].answer)
+        }))
+      };
+
+      setAnalysis(updatedResult);
       
       // Notify parent component that interview is complete
       if (onComplete) {
         onComplete({
-          transcript,
-          analysis: result,
+          transcript: JSON.stringify(conversationPairs),
+          analysis: updatedResult,
           jobRole,
           duration: elapsed,
         });
@@ -725,260 +1111,481 @@ export function VideoInterviewSimulator({
         variant: "default"
       });
       
-      // Set a basic analysis as fallback
+      // Set a basic analysis as fallback with meaningful feedback
       setAnalysis({
         overallScore: 7,
-        overallFeedback: "Your interview has been saved. Basic feedback is provided due to a system limitation.",
-        strengths: ["Good communication skills", "Professional responses", "Clear articulation"],
-        improvementAreas: ["Continue practicing with more specific examples", "Work on concise responses", "Prepare more technical details"],
-        questionFeedback: []
+        overallFeedback: "Your interview responses have been saved. Basic feedback is provided due to a system limitation.",
+        strengths: ["Professional communication", "Clear responses", "Good engagement"],
+        improvementAreas: ["Add more specific examples", "Provide more context", "Include relevant metrics"],
+        questionFeedback: conversationPairs.map((pair: ConversationPair): QuestionFeedback => ({
+          question: pair.question,
+          answer: pair.answer,
+          feedback: generateDefaultFeedback(pair.question, pair.answer)
+        }))
       });
     } finally {
       setIsAnalyzing(false);
     }
   };
   
+  // Add helper function to generate meaningful default feedback
+  const generateDefaultFeedback = (question: string, answer: string): string => {
+    const answerLength = answer.split(' ').length;
+    const hasSpecificExamples = answer.toLowerCase().includes('example') || 
+                               answer.toLowerCase().includes('instance') || 
+                               answer.toLowerCase().includes('specifically');
+    const hasNumbers = /\d+/.test(answer);
+    
+    let feedback = '';
+    
+    if (answerLength < 20) {
+      feedback = "Your response could benefit from more detail. Consider expanding your answer with specific examples or experiences.";
+    } else if (answerLength > 150) {
+      feedback = "Your response is comprehensive but could be more concise. Focus on the most relevant points while maintaining clarity.";
+    } else {
+      feedback = "Your response is well-structured and appropriately detailed.";
+    }
+    
+    if (!hasSpecificExamples) {
+      feedback += " Including specific examples would strengthen your answer.";
+    }
+    
+    if (!hasNumbers && (
+      question.toLowerCase().includes('how many') || 
+      question.toLowerCase().includes('what percentage') ||
+      question.toLowerCase().includes('impact') ||
+      question.toLowerCase().includes('result')
+    )) {
+      feedback += " Consider including metrics or numerical results to quantify your achievements.";
+    }
+    
+    return feedback;
+  };
+  
+  // Add the style tag in the component
+  useEffect(() => {
+    // Add scrollbar styles
+    const styleTag = document.createElement('style');
+    styleTag.textContent = scrollbarStyles;
+    document.head.appendChild(styleTag);
+
+    return () => {
+      document.head.removeChild(styleTag);
+    };
+  }, []);
+  
+  // Move videoStyles inside component to access isMirrored state
+  const videoStyles = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover' as const,
+    transform: isMirrored ? 'scaleX(-1)' : 'none',
+    borderRadius: '1.5rem',
+    backgroundColor: '#000'
+  };
+  
+  // Update the scroll to bottom effect to be more robust
+  useEffect(() => {
+    const scrollToBottom = () => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'end'
+        });
+      }
+    };
+
+    // Add a small delay to ensure DOM is updated
+    const timeoutId = setTimeout(scrollToBottom, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [messages, userTranscript]); // Also trigger on userTranscript changes
+  
   // Render appropriate content based on interview state
   const renderContent = () => {
     if (isConnecting) {
       return (
-        <div className="flex flex-col items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-          <p className="text-gray-500">Connecting to interview server and initializing cameras...</p>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          width: '100%',
+          backgroundColor: '#1a1a1a',
+          color: '#e5e7eb',
+          textAlign: 'center',
+          padding: '1rem'
+        }}>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+          <p className="text-gray-400 text-center">
+            Connecting to interview server and initializing cameras...
+          </p>
         </div>
       );
     }
     
     if (isFinished) {
       return (
-        <div className="space-y-6">
-          <div className="bg-gray-50 p-4 rounded-lg border">
-            <h3 className="font-medium text-lg mb-2">Interview Complete</h3>
-            <p className="text-gray-600">
-              You've completed your mock interview for the <span className="font-medium">{jobRole}</span> position.
-            </p>
-            <p className="text-gray-600 mt-2">
+        <div style={feedbackContainerStyles} className="custom-scrollbar">
+          <div style={feedbackSectionStyles}>
+            <div style={feedbackCardStyles}>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '1rem' }}>
+                Interview Feedback - {jobRole} Position
+              </h2>
+              <p style={{ color: '#9ca3af', marginBottom: '0.5rem' }}>
               Duration: {formatTime(elapsed)}
             </p>
           </div>
           
           {isAnalyzing ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-              <p className="text-gray-500">Analyzing your interview responses...</p>
+              <div style={{
+                ...feedbackCardStyles,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '1rem',
+                padding: '3rem'
+              }}>
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                <p style={{ color: '#9ca3af' }}>Analyzing your interview responses...</p>
             </div>
           ) : analysis ? (
-            <div className="space-y-4">
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="font-medium text-lg mb-2">Overall Performance</h3>
-                <div className="flex items-center space-x-2 mb-2">
-                  <div className="text-2xl font-bold">{analysis.overallScore}/10</div>
-                  <div className="text-gray-600">{analysis.overallFeedback}</div>
+              <>
+                <div style={feedbackCardStyles}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
+                    Overall Performance
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ 
+                      fontSize: '2rem', 
+                      fontWeight: 'bold',
+                      color: '#3b82f6'
+                    }}>
+                      {analysis.overallScore}/10
+                    </div>
+                    <div style={{ color: '#9ca3af', flex: 1 }}>
+                      {analysis.overallFeedback}
+                    </div>
                 </div>
                 <Progress value={analysis.overallScore * 10} className="h-2" />
               </div>
               
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="font-medium text-lg mb-2">Strengths</h3>
-                <ul className="list-disc ml-5 space-y-1">
+                <div style={feedbackCardStyles}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
+                    Key Strengths
+                  </h3>
+                  <ul style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {analysis.strengths.map((strength: string, i: number) => (
-                    <li key={i} className="text-gray-600">{strength}</li>
+                      <li key={i} style={{ 
+                        color: '#9ca3af',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.5rem'
+                      }}>
+                        <span style={{ color: '#22c55e' }}>•</span>
+                        {strength}
+                      </li>
                   ))}
                 </ul>
               </div>
               
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="font-medium text-lg mb-2">Areas for Improvement</h3>
-                <ul className="list-disc ml-5 space-y-1">
+                <div style={feedbackCardStyles}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
+                    Areas for Improvement
+                  </h3>
+                  <ul style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {analysis.improvementAreas.map((area: string, i: number) => (
-                    <li key={i} className="text-gray-600">{area}</li>
+                      <li key={i} style={{ 
+                        color: '#9ca3af',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.5rem'
+                      }}>
+                        <span style={{ color: '#f59e0b' }}>•</span>
+                        {area}
+                      </li>
                   ))}
                 </ul>
               </div>
               
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="font-medium text-lg mb-2">Question-Specific Feedback</h3>
-                <div className="space-y-3">
+                <div style={feedbackCardStyles}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>
+                    Detailed Response Analysis
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                   {analysis.questionFeedback.map((feedback: any, i: number) => (
-                    <div key={i} className="border-t pt-3 first:border-t-0 first:pt-0">
-                      <div className="font-medium">{feedback.question}</div>
-                      <div className="text-gray-600 mt-1">{feedback.feedback}</div>
+                      <div key={i} style={{
+                        padding: '1.5rem',
+                        backgroundColor: '#1a1a1a',
+                        borderRadius: '0.75rem',
+                        border: '1px solid #404040'
+                      }}>
+                        <div style={{ 
+                          fontWeight: 600,
+                          color: '#e5e7eb',
+                          marginBottom: '1rem',
+                          fontSize: '1.1rem'
+                        }}>
+                          Question {i + 1}:
                     </div>
-                  ))}
+                        <div style={{ 
+                          color: '#9ca3af',
+                          marginBottom: '1rem',
+                          paddingLeft: '1rem',
+                          borderLeft: '2px solid #3b82f6'
+                        }}>
+                          {feedback.question}
                 </div>
+                        
+                        <div style={{ 
+                          fontWeight: 600,
+                          color: '#e5e7eb',
+                          marginBottom: '0.5rem',
+                          marginTop: '1.5rem'
+                        }}>
+                          Your Response:
               </div>
+                        <div style={{ 
+                          color: '#9ca3af',
+                          marginBottom: '1rem',
+                          padding: '1rem',
+                          backgroundColor: '#2d2d2d',
+                          borderRadius: '0.5rem'
+                        }}>
+                          {feedback.answer}
             </div>
-          ) : null}
+                        
+                        <div style={{ 
+                          fontWeight: 600,
+                          color: '#e5e7eb',
+                          marginBottom: '0.5rem',
+                          marginTop: '1.5rem'
+                        }}>
+                          Feedback:
+            </div>
+                        <div style={{
+                          display: 'flex',
+                          gap: '0.75rem',
+                          alignItems: 'flex-start',
+                          color: '#9ca3af',
+                          padding: '1rem',
+                          backgroundColor: '#2d2d2d',
+                          borderRadius: '0.5rem',
+                          borderLeft: '3px solid #22c55e'
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            {feedback.feedback}
+            </div>
+              </div>
+          </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
       );
     }
     
     return (
-      <>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="relative rounded-lg overflow-hidden bg-black h-[240px] md:h-[320px]">
-            {/* Interviewer Avatar */}
-            <div className={`absolute inset-0 w-full h-full flex items-center justify-center bg-gradient-to-b from-gray-700 to-gray-900 ${interviewerSpeaking ? 'border-2 border-blue-500' : ''}`}>
-              <img
-                src={interviewerSpeaking ? '/avatars/interviewer-talking.svg' : '/avatars/interviewer-neutral.svg'}
-                alt="AI Interviewer"
-                className="w-3/4 h-3/4 object-contain"
-                style={{ filter: "drop-shadow(0px 0px 10px rgba(255,255,255,0.5))" }}
-                onError={(e) => {
-                  console.error("Error loading avatar image");
-                  (e.target as HTMLImageElement).onerror = null;
-                  (e.target as HTMLImageElement).src = interviewerSpeaking 
-                    ? 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="70" r="50" fill="%23eee"/><rect x="75" y="35" width="50" height="10" rx="5" fill="%23333"/><rect x="60" y="60" width="15" height="5" rx="2" fill="%23333"/><rect x="125" y="60" width="15" height="5" rx="2" fill="%23333"/><ellipse cx="100" cy="85" rx="15" ry="10" fill="%23333"/></svg>'
-                    : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="70" r="50" fill="%23eee"/><rect x="75" y="35" width="50" height="10" rx="5" fill="%23333"/><rect x="60" y="60" width="15" height="5" rx="2" fill="%23333"/><rect x="125" y="60" width="15" height="5" rx="2" fill="%23333"/><rect x="85" y="85" width="30" height="5" rx="2" fill="%23333"/></svg>';
-                }}
-              />
-            </div>
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-sm py-1 px-2 rounded">
-              AI Interviewer
-            </div>
-            {interviewerSpeaking && (
-              <div className="absolute top-2 right-2 flex items-center bg-blue-500 text-white text-xs py-1 px-2 rounded">
-                <span className="animate-pulse mr-1">●</span> Speaking
-              </div>
-            )}
-          </div>
-          
-          <div className="relative rounded-lg overflow-hidden bg-black h-[240px] md:h-[320px]">
-            {/* User Video */}
+      <div ref={containerRef} style={containerStyles}>
+        <div style={mainContentStyles}>
+          <div style={videoContainerStyles}>
+            <div style={videoGridStyles}>
+              {/* User Video - Full width */}
+              <div style={videoWrapperStyles}>
             <video 
               ref={userVideoRef}
               autoPlay 
-              playsInline 
               muted 
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white text-sm py-1 px-2 rounded">
-              You
-            </div>
-            {isRecording && (
-              <div className="absolute top-2 right-2 flex items-center bg-red-500 text-white text-xs py-1 px-2 rounded">
-                <span className="animate-pulse mr-1">●</span> Recording
+                  playsInline
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    transform: isMirrored ? 'scaleX(-1)' : 'none',
+                    borderRadius: '1.5rem'
+                  }}
+                />
+                <div style={{
+                  position: 'absolute',
+                  bottom: '1rem',
+                  left: '1rem',
+                  ...voiceActivityStyles
+                }}>
+                  <span>You</span>
+                  {isRecording && !interviewerSpeaking && (
+                    <FiVolume2 
+                      size={16} 
+                      className="animate-pulse" 
+                      style={{ color: '#22c55e' }}
+                    />
+                  )}
               </div>
-            )}
-            {faceDetected && (
-              <div className="absolute top-2 left-2 flex items-center bg-green-500 text-white text-xs py-1 px-2 rounded">
-                Face Detected
-              </div>
-            )}
+
+                {/* AI Avatar Overlay */}
+                <div style={{
+                  ...aiAvatarStyles,
+                  background: 'linear-gradient(180deg, rgba(45, 45, 45, 0.9) 0%, rgba(26, 26, 26, 0.9) 100%)'
+                }}>
+                  <img
+                    src={interviewerExpressions[interviewerMood]}
+                    alt="AI Interviewer"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: '1rem'
+                    }}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '0.5rem',
+                    left: '0.5rem',
+                    ...voiceActivityStyles,
+                    padding: '0.25rem 0.5rem',
+                    fontSize: '0.75rem',
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(4px)'
+                  }}>
+                    <span>Ruby</span>
+                    {interviewerSpeaking && (
+                      <FiVolume2 
+                        size={14} 
+                        className="animate-pulse" 
+                        style={{ color: '#22c55e' }}
+                      />
+                    )}
+                  </div>
+                </div>
           </div>
         </div>
         
-        <div className="h-64 overflow-y-auto p-4 bg-gray-50 rounded-lg mb-4">
-          {messages.map((msg, index) => (
-            <div 
-              key={index} 
-              className={`mb-4 ${msg.role === 'interviewer' ? 'text-gray-800' : 'text-primary'}`}
-            >
-              <div className="font-medium mb-1">
-                {msg.role === 'interviewer' ? 'Interviewer' : 'You'}
-              </div>
-              <div className="bg-white rounded-lg p-3 shadow-sm">
-                {msg.content}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {msg.timestamp.toLocaleTimeString()}
-              </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
-        
-        {userTranscript && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="text-sm font-medium mb-1 flex justify-between">
-              <span>Live Transcript:</span>
-              <span className="text-xs text-gray-500 italic">Your responses are submitted automatically</span>
-            </div>
-            <div className="text-gray-700">{userTranscript}</div>
-          </div>
-        )}
-        
-        <div>
-          <textarea
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-            rows={3}
-            placeholder="Speak your answer..."
-            value={currentAnswer}
-            onChange={(e) => setCurrentAnswer(e.target.value)}
-            onKeyDown={handleKeyPress}
-            disabled={isFinished}
-          />
-          <div className="flex justify-between items-center mt-2">
-            <div className="flex space-x-2">
-              <Button 
-                variant="outline" 
-                onClick={toggleCamera}
-                className="flex items-center"
-              >
-                {isCameraOn ? <FiVideo className="mr-1" /> : <FiVideoOff className="mr-1" />}
-                {isCameraOn ? 'Cam On' : 'Cam Off'}
-              </Button>
-              <Button 
-                variant="outline" 
+            {/* Control Bar */}
+            <div style={controlBarStyles}>
+              <button
                 onClick={toggleMicrophone}
-                className="flex items-center"
+                style={{
+                  ...controlButtonStyles,
+                  backgroundColor: (!isRecording || !isMicActive || interviewerSpeaking) ? '#dc2626' : '#404040',
+                  cursor: interviewerSpeaking ? 'not-allowed' : 'pointer'
+                }}
+                title={
+                  interviewerSpeaking 
+                    ? 'Microphone automatically muted while AI is speaking' 
+                    : isRecording 
+                      ? 'Mute' 
+                      : 'Unmute'
+                }
+                disabled={interviewerSpeaking}
               >
-                {isRecording ? <FiMic className="mr-1" /> : <FiMicOff className="mr-1" />}
-                {isRecording ? 'Mic On' : 'Mic Off'}
-              </Button>
-            </div>
-            <div className="flex space-x-2">
-              <Button 
-                variant="destructive" 
+                {isMicActive && isRecording && !interviewerSpeaking ? <FiMic size={20} /> : <FiMicOff size={20} />}
+              </button>
+              <button
+                onClick={toggleCamera}
+                style={{
+                  ...controlButtonStyles,
+                  backgroundColor: isCameraOn ? '#404040' : '#dc2626'
+                }}
+                title={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
+              >
+                {isCameraOn ? <FiVideo size={20} /> : <FiVideoOff size={20} />}
+              </button>
+              <button
                 onClick={endInterview}
-                disabled={isFinished}
+                style={{
+                  ...controlButtonStyles,
+                  backgroundColor: '#dc2626'
+                }}
+                title="End interview"
               >
-                End Interview
-              </Button>
+                <FiPhoneOff size={20} />
+              </button>
+              </div>
+              </div>
+        </div>
+        
+        {/* Right-side Transcript Panel */}
+        <div style={transcriptContainerStyles}>
+          <div style={{
+            padding: '1rem',
+            borderBottom: '1px solid #404040',
+            color: 'white',
+            fontWeight: 500
+          }}>
+            Live Transcript
+            </div>
+          <div 
+            style={{
+              ...messagesContainerStyles,
+              padding: '1rem',
+              backgroundColor: '#2d2d2d'
+            }}
+            className="custom-scrollbar"
+          >
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  maxWidth: '90%',
+                  alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start'
+                }}
+              >
+                <div
+                  style={{
+                    padding: '0.75rem',
+                    borderRadius: '0.5rem',
+                    backgroundColor: message.sender === 'user' ? '#3b82f6' : '#4b5563',
+                    color: 'white',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {message.content}
+            </div>
+                <div
+                  style={{
+                    fontSize: '0.75rem',
+                    color: '#9ca3af',
+                    alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start'
+                  }}
+                >
+                  {new Date(message.timestamp).toLocaleTimeString()}
             </div>
           </div>
+            ))}
+            {/* Add a dummy div for scroll reference */}
+            <div ref={messagesEndRef} style={{ height: '1px', width: '100%' }} />
         </div>
-      </>
+        </div>
+      </div>
     );
   };
   
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Video Mock Interview: {jobRole}</CardTitle>
-        <CardDescription>
-          {isFinished 
-            ? `Interview completed in ${formatTime(elapsed)}`
-            : `Remaining time: ${formatTime(remaining)}`
-          }
-        </CardDescription>
-        {!isFinished && (
-          <Progress value={progress} className="h-2 mt-2" />
-        )}
-      </CardHeader>
-      <CardContent>
+    <div ref={containerRef} style={containerStyles}>
         {renderContent()}
-      </CardContent>
-      {!isConnecting && !isFinished && (
-        <CardFooter className="border-t pt-4 text-sm text-gray-500">
-          <div className="w-full flex justify-between items-center">
-            <div>
-              {isRecording ? (
-                <span className="flex items-center">
-                  <span className="animate-pulse text-red-500 mr-2">●</span> Recording Audio
-                </span>
-              ) : (
-                <span className="flex items-center">
-                  <span className="text-gray-400 mr-2">●</span> Mic Off
-                </span>
-              )}
+      <style>
+        {`
+          @media (max-width: 768px) {
+            .video-grid {
+              grid-template-columns: 1fr;
+            }
+            .transcript-panel {
+              width: 280px;
+            }
+          }
+          @media (max-width: 480px) {
+            .transcript-panel {
+              width: 240px;
+            }
+          }
+        `}
+      </style>
             </div>
-            <div>
-              Interview progress: {Math.min(100, Math.round(progress))}%
-            </div>
-          </div>
-        </CardFooter>
-      )}
-    </Card>
   );
 }
