@@ -50,6 +50,22 @@ function ResumeBuilder() {
     }, 100);
   };
 
+  const handleDeleteResume = async (id: number | string) => {
+    try {
+      await fetch(`/api/resumes/${id}`, { method: 'DELETE' });
+      toast({
+        title: "Resume deleted",
+        description: "Your resume has been successfully deleted.",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete resume. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleCreateNewResume = () => {
     navigate("/resume-builder/new");
   };
@@ -87,6 +103,7 @@ function ResumeBuilder() {
                   resume={resume}
                   onEdit={handleEditResume}
                   onDownload={handleDownloadResume}
+                  onDelete={handleDeleteResume}
                 />
               ))}
               <NewResumeCard onClick={handleCreateNewResume} />

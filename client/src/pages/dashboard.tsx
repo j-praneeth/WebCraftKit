@@ -9,19 +9,16 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Resume, InterviewQuestion, MockInterview, JobPosting } from "@shared/schema";
-
-interface UserStatsResponse {
-  currentAtsScore: number;
-  previousAtsScore: number;
-  currentResumeViews: number;
-  previousResumeViews: number;
-  currentInterviewReadiness: number;
-  previousInterviewReadiness: number;
-  currentJobMatchScore: number;
-  previousJobMatchScore: number;
-}
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
+
+interface UserStatsResponse {
+  jobMatchScore: number;
+  lastJobMatch: string;
+  mockInterviewsCount: number;
+  atsScore: number;
+  lastAtsUpdate: string;
+}
 
 function Dashboard() {
   const { user } = useAuth();
@@ -123,42 +120,17 @@ function Dashboard() {
     isLoading: isLoadingStats
   } = useQuery<UserStatsResponse>({
     queryKey: ["/api/user/stats"],
+    queryFn: async () => {
+      const response = await fetch('/api/user/stats');
+      if (!response.ok) {
+        throw new Error('Failed to fetch stats');
+      }
+      const data = await response.json();
+      console.log('User stats response:', data); // Add logging to debug
+      return data;
+    },
     enabled: !!user,
   });
-
-  // Calculate stats
-  const calculateStatsChange = (current: number, previous: number) => {
-    if (!previous) return { value: 0, type: "neutral" as const };
-    const change = ((current - previous) / previous) * 100;
-    return {
-      value: Math.abs(Math.round(change)),
-      type: change > 0 ? "increase" as const : "decrease" as const
-    };
-  };
-
-  const atsScore = userStats?.currentAtsScore || 0;
-  const atsScoreChange = calculateStatsChange(
-    atsScore,
-    userStats?.previousAtsScore || 0
-  );
-
-  const resumeViews = userStats?.currentResumeViews || 0;
-  const resumeViewsChange = calculateStatsChange(
-    resumeViews,
-    userStats?.previousResumeViews || 0
-  );
-
-  const interviewReadiness = userStats?.currentInterviewReadiness || 0;
-  const interviewReadinessChange = calculateStatsChange(
-    interviewReadiness,
-    userStats?.previousInterviewReadiness || 0
-  );
-
-  const jobMatchScore = userStats?.currentJobMatchScore || 0;
-  const jobMatchScoreChange = calculateStatsChange(
-    jobMatchScore,
-    userStats?.previousJobMatchScore || 0
-  );
 
   // Handlers
   const handleEditResume = (id: string | number) => {
@@ -234,9 +206,9 @@ function Dashboard() {
       {/* Dashboard Stats */}
       <div className="mt-8">
         <h2 className="text-lg leading-6 font-medium text-gray-900">Your Progress</h2>
-        <div className="mt-2 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-2 grid grid-cols-1 gap-5 sm:grid-cols-2">
          {isLoadingStats ? (
-           Array(4).fill(0).map((_, i) => (
+           Array(2).fill(0).map((_, i) => (
              <div key={i} className="bg-white overflow-hidden shadow rounded-lg p-6 animate-pulse">
                <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
                <div className="h-8 bg-gray-200 rounded w-1/4"></div>
@@ -245,40 +217,31 @@ function Dashboard() {
          ) : (
            <>
              <StatsCard
-               title="ATS Score"
-               value={`${atsScore}%`}
-               change={`${atsScoreChange.value}%`}
-               changeType={atsScoreChange.type}
-               icon="ri-file-search-line"
+               title="Job Match Score"
+               value={`${userStats?.jobMatchScore ?? 0}%`}
+               change={userStats?.lastJobMatch ? new Date(userStats.lastJobMatch).toLocaleDateString() : 'Not available'}
+               changeType="neutral"
+               icon="ri-award-line"
                iconBgColor="bg-primary-100"
                iconColor="text-primary-600"
              />
              <StatsCard
-               title="Resume Views"
-               value={resumeViews}
-               change={resumeViewsChange.value}
-               changeType={resumeViewsChange.type}
-               icon="ri-eye-line"
+               title="ATS Score"
+               value={`${userStats?.atsScore ?? 0}%`}
+              //  change={userStats?.lastAtsUpdate ? new Date(userStats.lastAtsUpdate).toLocaleDateString() : 'Not available'}
+               changeType="neutral"
+               icon="ri-award-line"
+               iconBgColor="bg-primary-100"
+               iconColor="text-primary-600"
+             />
+             <StatsCard
+               title="Mock Interviews"
+               value={userStats?.mockInterviewsCount ?? 0}
+               change={userStats?.mockInterviewsCount === 3 ? 'Max limit reached' : `${3 - (userStats?.mockInterviewsCount ?? 0)} remaining`}
+               changeType="neutral"
+               icon="ri-user-voice-line"
                iconBgColor="bg-secondary-100"
                iconColor="text-secondary-600"
-             />
-             <StatsCard
-               title="Interview Readiness"
-               value={`${interviewReadiness}%`}
-               change={`${interviewReadinessChange.value}%`}
-               changeType={interviewReadinessChange.type}
-               icon="ri-user-voice-line"
-               iconBgColor="bg-accent-100"
-               iconColor="text-accent-600"
-             />
-             <StatsCard
-               title="Job Match Score"
-               value={`${jobMatchScore}%`}
-               change={`${jobMatchScoreChange.value}%`}
-               changeType={jobMatchScoreChange.type}
-               icon="ri-award-line"
-               iconBgColor="bg-gray-100"
-               iconColor="text-gray-600"
              />
            </>
          )}

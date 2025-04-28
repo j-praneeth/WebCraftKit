@@ -355,7 +355,7 @@ function ResumeEditor() {
       
       toast({
         title: "Resume optimized",
-        description: `Your resume has been optimized with an ATS score of ${data.score}%.`,
+        description: `Your resume has been optimized with an ATS score of ${typeof data.atsScore === 'number' ? data.atsScore : (typeof data.score === 'number' ? data.score : 0)}%.`,
       });
     },
     onError: (error: any, _, context: any) => {

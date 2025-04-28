@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { CoverLetter, Resume } from "@shared/schema";
-import { generateCoverLetter } from "@/lib/openai";
+import { generateCoverLetter } from "@/lib/gemini";
 
 function CoverLetterGenerator() {
   const { user } = useAuth();
@@ -70,30 +70,70 @@ function CoverLetterGenerator() {
       return;
     }
 
+    // Validate user?.id is a valid 24-character hex string
+    const userId = typeof user?.id === "string" && /^[a-fA-F0-9]{24}$/.test(user.id) ? user.id : undefined;
+    if (!userId) {
+      toast({
+        title: "Error",
+        description: "Invalid user ID. Please log in again.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       setIsGenerating(true);
       const selectedResume = resumes?.find(r => r.id === selectedResumeId);
-      
       if (!selectedResume) {
         throw new Error("Selected resume not found");
       }
-
       const generatedContent = await generateCoverLetter(
         selectedResume.content,
         formData.jobDescription,
         formData.company
       );
-
-      setFormData(prev => ({ ...prev, letterContent: generatedContent }));
-
-      toast({
-        title: "Cover letter generated",
-        description: "Your cover letter has been created successfully"
-      });
+      if (!generatedContent || typeof generatedContent !== 'string') {
+        throw new Error("Invalid cover letter content received");
+      }
+      setFormData(prev => ({
+        ...prev,
+        letterContent: generatedContent
+      }));
+      try {
+        const response = await fetch('/api/cover-letters', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: `Cover Letter for ${formData.jobTitle} at ${formData.company}`,
+            content: generatedContent,
+            jobTitle: formData.jobTitle,
+            company: formData.company,
+            resumeId: selectedResumeId,
+            userId: userId
+          }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to save cover letter');
+        }
+        toast({
+          title: "Cover letter generated and saved",
+          description: "Your cover letter has been created and saved successfully"
+        });
+      } catch (saveError) {
+        console.error('Error saving cover letter:', saveError);
+        toast({
+          title: "Warning",
+          description: "Cover letter generated but failed to save. You can try saving it manually.",
+          variant: "destructive"
+        });
+      }
     } catch (error) {
+      console.error('Cover letter generation error:', error);
       toast({
         title: "Generation failed",
-        description: error.message || "Failed to generate cover letter",
+        description: error instanceof Error ? error.message : "Failed to generate cover letter",
         variant: "destructive"
       });
     } finally {
@@ -110,36 +150,44 @@ function CoverLetterGenerator() {
       });
       return;
     }
-
-    try {
-      const response = await apiRequest("POST", "/api/cover-letters", {
-        title: `Cover Letter for ${formData.jobTitle} at ${formData.company}`,
-        content: formData.letterContent,
-        jobTitle: formData.jobTitle,
-        company: formData.company
+    // Validate user?.id is a valid 24-character hex string
+    const userId = typeof user?.id === "string" && /^[a-fA-F0-9]{24}$/.test(user.id) ? user.id : undefined;
+    if (!userId) {
+      toast({
+        title: "Error",
+        description: "Invalid user ID. Please log in again.",
+        variant: "destructive"
       });
-
-      if (response.ok) {
-        toast({
-          title: "Cover letter saved",
-          description: "Your cover letter has been saved successfully"
-        });
-
-        // Reset form
-        setFormData({
-          jobTitle: "",
-          company: "",
-          jobDescription: "",
-          letterContent: ""
-        });
-        setSelectedResumeId(null);
-      } else {
-        throw new Error("Failed to save cover letter");
+      return;
+    }
+    try {
+      const response = await fetch('/api/cover-letters', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: `Cover Letter for ${formData.jobTitle} at ${formData.company}`,
+          content: formData.letterContent,
+          jobTitle: formData.jobTitle,
+          company: formData.company,
+          resumeId: selectedResumeId,
+          userId: userId
+        }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save cover letter');
       }
+      toast({
+        title: "Success",
+        description: "Your cover letter has been saved successfully"
+      });
+      // Optionally clear the form or redirect
     } catch (error) {
+      console.error('Error saving cover letter:', error);
       toast({
         title: "Save failed",
-        description: error.message || "Failed to save cover letter",
+        description: error instanceof Error ? error.message : "Failed to save cover letter",
         variant: "destructive"
       });
     }

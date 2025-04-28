@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema({
   plan: { type: String, default: 'free' },
   profilePicture: { type: String },
   mockInterviewsCount: { type: Number, default: 0 },
+  jobMatchScore: { type: Number, default: 0 },
+  lastJobMatch: { type: Date },
+  atsScore: { type: Number, default: 0 },
+  lastAtsUpdate: { type: Date },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

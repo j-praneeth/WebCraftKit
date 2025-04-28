@@ -15,14 +15,17 @@ export function ResumeCard({ resume, onEdit, onDownload, onDelete }: ResumeCardP
     ? formatDistanceToNow(new Date(resume.lastUpdated), { addSuffix: true })
     : 'Unknown';
     
-  const scoreColor = resume.atsScore && resume.atsScore >= 80 
-    ? "bg-primary-200 text-primary-600" 
-    : "bg-amber-200 text-amber-600";
+  const scoreColor = typeof resume.atsScore === "number" && resume.atsScore >= 80
+    ? "text-green-700"
+    : typeof resume.atsScore === "number" && resume.atsScore >= 50
+    ? "text-yellow-700"
+    : "text-red-700";
+  const scoreBg = typeof resume.atsScore === "number" && resume.atsScore >= 80
+    ? "bg-green-100"
+    : typeof resume.atsScore === "number" && resume.atsScore >= 50
+    ? "bg-yellow-100"
+    : "bg-red-100";
   
-  const scoreBg = resume.atsScore && resume.atsScore >= 80 
-    ? "bg-primary-500" 
-    : "bg-amber-500";
-
   return (
     <div className="bg-white shadow rounded-lg overflow-hidden">
       <div className="p-5">
@@ -60,8 +63,8 @@ export function ResumeCard({ resume, onEdit, onDownload, onDelete }: ResumeCardP
           <div className="relative pt-1">
             <div className="flex mb-2 items-center justify-between">
               <div>
-                <span className={cn("text-xs font-semibold inline-block", scoreColor)}>
-                  ATS Score: {resume.atsScore}%
+                <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${scoreBg} ${scoreColor}`}>
+                  {typeof resume.atsScore === "number" ? `ATS Score: ${resume.atsScore}%` : "ATS Score: N/A"}
                 </span>
               </div>
             </div>

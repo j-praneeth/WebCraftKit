@@ -87,7 +87,13 @@ export class MongoStorage implements IStorage {
 
   async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
     try {
-      const user = await UserModel.findByIdAndUpdate(id, data, { new: true });
+      // Convert number ID to string for MongoDB
+      const userId = id.toString();
+      const user = await UserModel.findByIdAndUpdate(
+        userId,
+        { ...data, updatedAt: new Date() },
+        { new: true }
+      );
       if (!user) return undefined;
       
       return this.convertMongoUserToSchemaUser(user);
@@ -283,9 +289,19 @@ export class MongoStorage implements IStorage {
 
   async createCoverLetter(insertCoverLetter: InsertCoverLetter): Promise<CoverLetter> {
     try {
-      const coverLetter = new CoverLetterModel(insertCoverLetter);
-      const savedCoverLetter = await coverLetter.save();
+      // Convert userId to string and validate it's a valid ObjectId
+      const userId = String(insertCoverLetter.userId);
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new Error('Invalid user ID format');
+      }
+
+      // Create new cover letter with converted userId
+      const coverLetter = new CoverLetterModel({
+        ...insertCoverLetter,
+        userId: new mongoose.Types.ObjectId(userId)
+      });
       
+      const savedCoverLetter = await coverLetter.save();
       return this.convertMongoCoverLetterToSchemaCoverLetter(savedCoverLetter);
     } catch (error) {
       console.error('Error creating cover letter:', error);
@@ -513,7 +529,6 @@ export class MongoStorage implements IStorage {
   private convertMongoUserToSchemaUser(user: any): User {
     return {
       id: user._id.toString(),
-      // username: user.username,
       email: user.email,
       password: user.password,
       firstName: user.firstName,
@@ -523,8 +538,12 @@ export class MongoStorage implements IStorage {
       profilePicture: user.profilePicture,
       createdAt: user.createdAt,
       mockInterviewsCount: user.mockInterviewsCount || 0,
+      atsScore: user.atsScore || 0,
+      lastAtsUpdate: user.lastAtsUpdate || null,
       provider: user.provider || null,
-      providerId: user.providerId || null
+      providerId: user.providerId || null,
+      jobMatchScore: user.jobMatchScore || 0,
+      lastJobMatch: user.lastJobMatch || null
     };
   }
   

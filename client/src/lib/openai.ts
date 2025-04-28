@@ -55,7 +55,7 @@ export async function generateCoverLetter(
   resumeContent: any, 
   jobDescription: string, 
   companyName: string
-): Promise<any> {
+): Promise<string> {
   try {
     const response = await fetch('/api/generate-cover-letter', {
       method: 'POST',
@@ -70,10 +70,18 @@ export async function generateCoverLetter(
     });
     
     if (!response.ok) {
-      throw new Error('Failed to generate cover letter');
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to generate cover letter');
     }
     
-    return await response.json();
+    const data = await response.json();
+    
+    if (!data || typeof data.coverLetter !== 'string') {
+      console.error('Invalid response format:', data);
+      throw new Error('Invalid cover letter content received');
+    }
+    
+    return data.coverLetter;
   } catch (error) {
     console.error('Error generating cover letter:', error);
     throw error;

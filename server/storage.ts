@@ -5,8 +5,8 @@ import {
   CoverLetter, InsertCoverLetter,
   InterviewQuestion, InsertInterviewQuestion,
   MockInterview, InsertMockInterview,
-  JobPosting, InsertJobPosting,
-  Organization, InsertOrganization
+  Organization, InsertOrganization,
+  JobApplication, InsertJobApplication // Add these new types
 } from "@shared/schema";
 
 export interface IStorage {
@@ -50,10 +50,13 @@ export interface IStorage {
   updateMockInterview(id: number | string, data: Partial<MockInterview>): Promise<MockInterview | undefined>;
   deleteMockInterview(id: number | string): Promise<boolean>;
   
-  // Job Posting methods
-  getJobPosting(id: string | number): Promise<JobPosting | undefined>;
-  getJobPostings(limit?: number): Promise<JobPosting[]>;
-  createJobPosting(job: InsertJobPosting): Promise<JobPosting>;
+  // Job Application methods
+  getJobApplication(id: string | number): Promise<JobApplication | undefined>;
+  getJobApplicationsByUserId(userId: string | number): Promise<JobApplication[]>;
+  getJobApplicationsByJobId(jobId: string | number): Promise<JobApplication[]>;
+  createJobApplication(application: InsertJobApplication): Promise<JobApplication>;
+  updateJobApplication(id: string | number, data: Partial<JobApplication>): Promise<JobApplication | undefined>;
+  deleteJobApplication(id: string | number): Promise<boolean>;
   
   // Organization methods
   getOrganization(id: string | number): Promise<Organization | undefined>;
@@ -71,7 +74,8 @@ export class MemStorage implements IStorage {
   private coverLetters: Map<number, CoverLetter>;
   private interviewQuestions: Map<number, InterviewQuestion>;
   private mockInterviews: Map<number, MockInterview>;
-  private jobPostings: Map<number, JobPosting>;
+  private jobApplications: Map<number, JobApplication>;
+  private applicationId: number;
   private organizations: Map<number, Organization>;
   
   private userId: number;
@@ -90,7 +94,8 @@ export class MemStorage implements IStorage {
     this.coverLetters = new Map();
     this.interviewQuestions = new Map();
     this.mockInterviews = new Map();
-    this.jobPostings = new Map();
+    this.jobApplications = new Map();
+    this.applicationId = 1;
     this.organizations = new Map();
     
     this.userId = 1;
@@ -370,36 +375,66 @@ export class MemStorage implements IStorage {
     return this.mockInterviews.delete(numericId);
   }
   
-  // Job Posting methods
-  async getJobPosting(id: string | number): Promise<JobPosting | undefined> {
+  // Job Application methods
+  async getJobApplication(id: string | number): Promise<JobApplication | undefined> {
     const numericId = typeof id === 'string' ? parseInt(id) : id;
-    return this.jobPostings.get(numericId);
+    return this.jobApplications.get(numericId);
   }
-  
-  async getJobPostings(limit: number = 10): Promise<JobPosting[]> {
-    const jobs = Array.from(this.jobPostings.values());
-    return jobs.slice(0, limit);
+
+  async getJobApplicationsByUserId(userId: string | number): Promise<JobApplication[]> {
+    const numericUserId = typeof userId === 'string' ? parseInt(userId) : userId;
+    return Array.from(this.jobApplications.values()).filter(
+      (application) => application.userId === numericUserId,
+    );
   }
-  
-  async createJobPosting(insertJob: InsertJobPosting): Promise<JobPosting> {
-    const id = this.jobId++;
-    const postDate = new Date();
+
+  async getJobApplicationsByJobId(jobId: string | number): Promise<JobApplication[]> {
+    const numericJobId = typeof jobId === 'string' ? parseInt(jobId) : jobId;
+    return Array.from(this.jobApplications.values()).filter(
+      (application) => application.jobId === numericJobId,
+    );
+  }
+
+  async createJobApplication(insertApplication: InsertJobApplication): Promise<JobApplication> {
+    const id = this.applicationId++;
+    const appliedDate = insertApplication.appliedDate || new Date();
     
-    const job: JobPosting = {
-      ...insertJob,
+    const application: JobApplication = {
       id,
-      postDate,
-      location: insertJob.location ?? null,
-      salary: insertJob.salary ?? null,
-      description: insertJob.description ?? null,
-      requirements: insertJob.requirements ?? null,
-      source: insertJob.source ?? null,
-      url: insertJob.url ?? null,
-      matchScore: insertJob.matchScore ?? null
+      userId: typeof insertApplication.userId === 'string' ? parseInt(insertApplication.userId) : insertApplication.userId,
+      jobId: typeof insertApplication.jobId === 'string' ? parseInt(insertApplication.jobId) : insertApplication.jobId,
+      resumeId: insertApplication.resumeId ? (typeof insertApplication.resumeId === 'string' ? parseInt(insertApplication.resumeId) : insertApplication.resumeId) : null,
+      coverLetterId: insertApplication.coverLetterId ? (typeof insertApplication.coverLetterId === 'string' ? parseInt(insertApplication.coverLetterId) : insertApplication.coverLetterId) : null,
+      status: insertApplication.status || 'applied',
+      appliedDate,
+      lastUpdated: appliedDate,
+      notes: insertApplication.notes || null,
+      feedback: insertApplication.feedback || null,
+      interviews: insertApplication.interviews || []
     };
     
-    this.jobPostings.set(id, job);
-    return job;
+    this.jobApplications.set(id, application);
+    return application;
+  }
+
+  async updateJobApplication(id: string | number, data: Partial<JobApplication>): Promise<JobApplication | undefined> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    const application = await this.getJobApplication(numericId);
+    if (!application) return undefined;
+    
+    const updatedApplication = { 
+      ...application, 
+      ...data,
+      lastUpdated: new Date() 
+    };
+    
+    this.jobApplications.set(numericId, updatedApplication);
+    return updatedApplication;
+  }
+
+  async deleteJobApplication(id: string | number): Promise<boolean> {
+    const numericId = typeof id === 'string' ? parseInt(id) : id;
+    return this.jobApplications.delete(numericId);
   }
   
   // Organization methods
@@ -675,50 +710,55 @@ export class MemStorage implements IStorage {
     };
     this.mockInterviews.set(mockInterview.id, mockInterview);
     
-    // Create some job postings
-    const jobs = [
+    const applications = [
       {
-        id: this.jobId++,
-        title: 'Senior Frontend Developer',
-        company: 'TechCorp Inc.',
-        location: 'San Francisco, CA (Remote)',
-        salary: '$120K - $150K',
-        description: "We are looking for an experienced Frontend Developer with React expertise to join our growing team. In this role, you will work closely with designers and backend developers to create intuitive and responsive user interfaces.",
-        requirements: ['React', 'TypeScript', 'Next.js'],
-        postDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
-        source: 'LinkedIn',
-        url: 'https://example.com/jobs/1',
-        matchScore: 98
+        id: this.applicationId++,
+        userId: 1, // Alex Morgan's ID
+        jobId: 1, // Senior Frontend Developer job
+        resumeId: 1, // Senior Developer Resume
+        coverLetterId: null,
+        status: 'interviewing',
+        appliedDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+        lastUpdated: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+        notes: "Received positive feedback from the initial screening. Technical interview scheduled for next week.",
+        feedback: null,
+        interviews: [
+          {
+            type: "Technical Screening",
+            date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+            notes: "Discussed React experience and system design approaches."
+          }
+        ]
       },
       {
-        id: this.jobId++,
-        title: 'Full Stack Engineer',
-        company: 'InnovateX',
-        location: 'New York, NY (Hybrid)',
-        salary: '$110K - $140K',
-        description: "Join our team as a Full Stack Engineer to build and maintain web applications. You will be responsible for both frontend and backend development, working with modern technologies and frameworks.",
-        requirements: ['Node.js', 'React', 'MongoDB'],
-        postDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 1 week ago
-        source: 'Indeed',
-        url: 'https://example.com/jobs/2',
-        matchScore: 95
+        id: this.applicationId++,
+        userId: 1, // Alex Morgan's ID
+        jobId: 3, // DevOps Engineer job
+        resumeId: 1, // Senior Developer Resume
+        coverLetterId: null,
+        status: 'applied',
+        appliedDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
+        lastUpdated: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // 1 day ago
+        notes: "Applied with customized resume highlighting AWS and Docker experience.",
+        feedback: null,
+        interviews: []
       },
       {
-        id: this.jobId++,
-        title: 'DevOps Engineer',
-        company: 'CloudSys Technologies',
-        location: 'Boston, MA (Remote)',
-        salary: '$130K - $160K',
-        description: "We are seeking a DevOps Engineer to help us build and maintain our cloud infrastructure. You will work on CI/CD pipelines, infrastructure as code, and ensure high availability of our systems.",
-        requirements: ['AWS', 'Kubernetes', 'Terraform'],
-        postDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
-        source: 'LinkedIn',
-        url: 'https://example.com/jobs/3',
-        matchScore: 85
+        id: this.applicationId++,
+        userId: 2, // Sarah Smith's ID
+        jobId: 2, // Full Stack Engineer job
+        resumeId: null,
+        coverLetterId: null,
+        status: 'rejected',
+        appliedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), // 14 days ago
+        lastUpdated: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+        notes: "Received rejection email citing lack of MongoDB experience.",
+        feedback: "Thank you for your interest, but we are looking for candidates with more experience in MongoDB.",
+        interviews: []
       }
     ];
     
-    jobs.forEach(job => this.jobPostings.set(job.id, job));
+    applications.forEach(app => this.jobApplications.set(app.id, app));
   }
 }
 

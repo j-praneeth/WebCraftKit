@@ -14,6 +14,8 @@ export const users = pgTable("users", {
   profilePicture: text("profile_picture"),
   plan: text("plan").default("free").notNull(), // free, professional, enterprise
   mockInterviewsCount: integer("mock_interviews_count").default(0), // Track usage for free tier limits
+  jobMatchScore: integer("job_match_score").default(0), // Track latest job match score
+  lastJobMatch: timestamp("last_job_match"), // Track when the last job match was calculated
   provider: text("provider").default("local"), // local, google, linkedin, apple
   providerId: text("provider_id"), // ID from the OAuth provider
 });
@@ -173,9 +175,49 @@ export const insertOrganizationSchema = createInsertSchema(organizations).pick({
   subscription: true,
 });
 
+// Job Applications table
+export const jobApplications = pgTable("job_applications", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(), // Changed to text to support MongoDB ObjectIds
+  jobPostingId: text("job_posting_id").notNull(), // Changed to text to support MongoDB ObjectIds
+  resumeId: text("resume_id"),
+  coverLetterId: text("cover_letter_id"),
+  status: text("status").default("applied").notNull(), // applied, interviewing, rejected, offered, accepted
+  appliedDate: timestamp("applied_date").defaultNow().notNull(),
+  notes: text("notes"),
+  followUpDate: timestamp("follow_up_date"),
+  lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+});
+
+// Use custom schema for Job Applications to support MongoDB IDs
+export const insertJobApplicationSchema = z.object({
+  userId: z.union([z.string(), z.number()]),
+  jobPostingId: z.union([z.string(), z.number()]),
+  resumeId: z.union([z.string(), z.number()]).optional().nullable(),
+  coverLetterId: z.union([z.string(), z.number()]).optional().nullable(),
+  status: z.string().default("applied"),
+  notes: z.string().optional().nullable(),
+  followUpDate: z.date().optional().nullable(),
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type User = {
+  id: string | number;
+  email: string;
+  password: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  role: 'user' | 'admin';
+  plan: 'free' | 'premium';
+  profilePicture: string | null;
+  createdAt: Date;
+  mockInterviewsCount: number;
+  provider: string | null;
+  providerId: string | null;
+  jobMatchScore: number;
+  lastJobMatch: Date | null;
+};
 
 export type InsertResumeTemplate = z.infer<typeof insertResumeTemplateSchema>;
 export type ResumeTemplate = typeof resumeTemplates.$inferSelect;
@@ -183,8 +225,23 @@ export type ResumeTemplate = typeof resumeTemplates.$inferSelect;
 export type InsertResume = z.infer<typeof insertResumeSchema>;
 export type Resume = typeof resumes.$inferSelect;
 
-export type InsertCoverLetter = z.infer<typeof insertCoverLetterSchema>;
-export type CoverLetter = typeof coverLetters.$inferSelect;
+export interface InsertCoverLetter {
+  userId: string;  // Changed from number to string to support MongoDB ObjectId
+  title: string;
+  content: string;
+  jobTitle?: string | null;
+  company?: string | null;
+}
+
+export interface CoverLetter {
+  id: string;  // MongoDB ObjectId
+  userId: string;  // MongoDB ObjectId
+  title: string;
+  content: string;
+  jobTitle?: string | null;
+  company?: string | null;
+  lastUpdated: Date;
+}
 
 export type InsertInterviewQuestion = z.infer<typeof insertInterviewQuestionSchema>;
 export type InterviewQuestion = typeof interviewQuestions.$inferSelect;
@@ -197,3 +254,7 @@ export type JobPosting = typeof jobPostings.$inferSelect;
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type Organization = typeof organizations.$inferSelect;
+
+// Add the missing JobApplication type definitions
+export type InsertJobApplication = z.infer<typeof insertJobApplicationSchema>;
+export type JobApplication = typeof jobApplications.$inferSelect;

@@ -116,6 +116,47 @@ function cleanAndParseJSON(response: string): any {
   }
 }
 
+// Helper function to calculate ATS score
+function calculateATSScore(content: any, jobDesc: string): number {
+  try {
+    if (!content || !jobDesc) return 0;
+    
+    // Extract keywords from job description
+    const jobKeywords = jobDesc.toLowerCase()
+      .match(/\b\w+\b/g)
+      ?.filter(word => word.length > 3) || [];
+    
+    if (jobKeywords.length === 0) return 0;
+    
+    // Convert resume content to searchable text
+    const resumeText = JSON.stringify(content).toLowerCase();
+    
+    // Count matching keywords
+    const matchingKeywords = jobKeywords.filter(keyword => 
+      resumeText.includes(keyword)
+    );
+    
+    // Calculate base score from keyword matches
+    const keywordScore = (matchingKeywords.length / jobKeywords.length) * 100;
+    
+    // Add bonus points for structure and completeness
+    let structureScore = 0;
+    if (content.personalInfo) structureScore += 10;
+    if (content.experience?.length > 0) structureScore += 20;
+    if (content.education?.length > 0) structureScore += 10;
+    if (content.skills?.length > 0) structureScore += 10;
+    
+    // Calculate final score (70% keywords, 30% structure)
+    const finalScore = (keywordScore * 0.7) + (structureScore * 0.3);
+    
+    // Ensure score is between 0 and 100
+    return Math.min(100, Math.max(0, Math.round(finalScore)));
+  } catch (error) {
+    console.error("Error calculating ATS score:", error);
+    return 0;
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<HttpServer> {
   // Connect to MongoDB
   try {
@@ -658,16 +699,30 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
 
   app.post("/api/cover-letters", isAuthenticated, async (req, res) => {
     try {
+      const { title, content, jobTitle, company } = req.body;
       const userId = (req.user as User).id;
-      const letterData = insertCoverLetterSchema.parse({
-        ...req.body,
-        userId
+
+      if (!title || !content || !jobTitle || !company) {
+        return res.status(400).json({
+          message: "Missing required fields"
+        });
+      }
+
+      // Create cover letter with userId as string (MongoDB ObjectId)
+      const coverLetter = await storage.createCoverLetter({
+        userId: String(userId),
+        title,
+        content,
+        jobTitle,
+        company
       });
-      
-      const letter = await storage.createCoverLetter(letterData);
-      res.status(201).json(letter);
+
+      res.json(coverLetter);
     } catch (error) {
-      res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
+      console.error("Error saving cover letter:", error);
+      res.status(500).json({
+        message: "Failed to save cover letter"
+      });
     }
   });
 
@@ -745,7 +800,7 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
   // Reset mock interview count endpoint
   app.get("/api/mock-interviews/reset-count", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as User).id;
+      const userId = Number((req.user as User).id);
       
       // Get the actual count of mock interviews for this user
       const interviews = await storage.getMockInterviewsByUserId(userId);
@@ -770,7 +825,7 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
 
   app.post("/api/mock-interviews", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as User).id;
+      const userId = Number((req.user as User).id);
       const user = await storage.getUser(userId);
   
       const mockInterviewsCount = user?.mockInterviewsCount ?? 0;
@@ -881,7 +936,7 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
   // Delete mock interview endpoint
   app.delete("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
     try {
-      const userId = (req.user as User).id;
+      const userId = Number((req.user as User).id);
       const interviewId = req.params.id;
       
       // Verify the interview exists and belongs to the user
@@ -981,24 +1036,111 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
   app.post('/api/optimize-resume', isAuthenticated, async (req, res) => {
     try {
       const { resumeContent, jobDescription } = req.body;
+      const userId = Number((req.user as User).id);
       
+      // Validate input data
+      if (!resumeContent || !jobDescription) {
+        return res.status(400).json({
+          optimizedContent: resumeContent || {},
+          atsScore: 0,
+          suggestions: [
+            "Please fill in all required resume fields",
+            "Add relevant work experience",
+            "Include your education details",
+            "List your skills and certifications"
+          ]
+        });
+      }
+
+      // Calculate initial ATS score
+      const initialScore = calculateATSScore(resumeContent, jobDescription);
+
       const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
-      const prompt = `You are an expert ATS (Applicant Tracking System) optimizer. Your task is to analyze a resume against a job description, optimize the content for ATS algorithms, provide an ATS match score, and suggest improvements. Return your analysis in JSON format.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}`;
+      const prompt = `You are an expert ATS (Applicant Tracking System) optimizer. Analyze this resume against the job description and provide optimization suggestions. Return your analysis in JSON format with the following structure:
+      {
+        "optimizedContent": object (the optimized resume content),
+        "atsScore": number (between 0-100),
+        "suggestions": array of strings (improvement suggestions)
+      }
+      
+      Resume: ${JSON.stringify(resumeContent)}
+      Job Description: ${jobDescription}
+      Initial ATS Score: ${initialScore}`;
       
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const content = response.text();
       
-      const parsedResult = JSON.parse(content || '{}');
+      let parsedResult;
+      try {
+        // Clean and parse the response
+        const cleanContent = content
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*/g, '')
+          .trim();
+        
+        parsedResult = JSON.parse(cleanContent);
+        
+        // Validate the score is a number
+        if (typeof parsedResult.atsScore !== 'number' || isNaN(parsedResult.atsScore)) {
+          parsedResult.atsScore = initialScore;
+        }
+      } catch (parseError) {
+        console.error("Error parsing AI response:", parseError);
+        parsedResult = {
+          optimizedContent: resumeContent,
+          atsScore: initialScore,
+          suggestions: [
+            "Please fill in all required resume fields",
+            "Add relevant work experience",
+            "Include your education details",
+            "List your skills and certifications"
+          ]
+        };
+      }
       
-      res.json({
+      // Ensure we have a valid numeric score
+      const finalScore = typeof parsedResult.atsScore === 'number' && !isNaN(parsedResult.atsScore)
+        ? Math.min(100, Math.max(0, Math.round(parsedResult.atsScore)))
+        : initialScore;
+      
+      // Store the ATS score and jobMatchScore in the user's profile
+      try {
+        await storage.updateUser(Number((req.user as User).id), {
+          atsScore: finalScore
+        });
+      } catch (updateError) {
+        console.error("Error updating user ATS/jobMatchScore:", updateError);
+        // Continue even if update fails - we still want to return the score
+      }
+      
+      // Construct the final response
+      const finalResult = {
         optimizedContent: parsedResult.optimizedContent || resumeContent,
-        atsScore: parsedResult.atsScore || 70,
-        suggestions: parsedResult.suggestions || []
-      });
+        atsScore: finalScore,
+        suggestions: Array.isArray(parsedResult.suggestions) && parsedResult.suggestions.length > 0
+          ? parsedResult.suggestions
+          : [
+              "Please fill in all required resume fields",
+              "Add relevant work experience",
+              "Include your education details",
+              "List your skills and certifications"
+            ]
+      };
+      
+      res.json(finalResult);
     } catch (error) {
       console.error("Error optimizing resume:", error);
-      res.status(500).json({ error: "Failed to optimize resume" });
+      res.status(500).json({ 
+        optimizedContent: req.body.resumeContent || {},
+        atsScore: 0,
+        suggestions: [
+          "Please fill in all required resume fields",
+          "Add relevant work experience",
+          "Include your education details",
+          "List your skills and certifications"
+        ]
+      });
     }
   });
 
@@ -1006,19 +1148,102 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
     try {
       const { resumeContent, jobDescription, companyName } = req.body;
       
-      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
-      const prompt = `You are an expert cover letter writer. Create a professional, personalized cover letter based on the provided resume and job description.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}\n\nCompany: ${companyName}`;
+      if (!resumeContent || !jobDescription || !companyName) {
+        return res.status(400).json({
+          message: "Please provide all required information: resume content, job description, and company name."
+        });
+      }
+
+      // Extract relevant information from resume
+      const name = resumeContent.personalInfo?.name || 'Candidate';
+      const email = resumeContent.personalInfo?.email || '';
+      const phone = resumeContent.personalInfo?.phone || '';
+      const skills = Array.isArray(resumeContent.skills) ? resumeContent.skills.join(', ') : '';
+      const experience = Array.isArray(resumeContent.experience) ? 
+        resumeContent.experience.map((exp: { position: string; company: string }) => 
+          `${exp.position} at ${exp.company}`
+        ).join(', ') : '';
       
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `Write a professional cover letter with the following information:
+
+Company: ${companyName}
+Job Description: ${jobDescription}
+
+Candidate Information:
+Name: ${name}
+Skills: ${skills}
+Experience: ${experience}
+
+Instructions:
+1. Write a formal business letter
+2. Start with today's date and contact information
+3. Begin with "Dear Hiring Manager,"
+4. First paragraph: Express interest in the position
+5. Middle paragraphs: Highlight relevant skills and experience
+6. Final paragraph: Thank them and express interest in an interview
+7. End with "Sincerely," and the name
+8. Keep it professional and concise
+9. Include proper paragraph spacing
+
+Write ONLY the cover letter content with proper formatting.`;
+
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const content = response.text();
+      let content = response.text();
       
-      res.json({
-        coverLetter: content || "Could not generate cover letter."
+      if (!content || typeof content !== 'string') {
+        throw new Error('Failed to generate cover letter content');
+      }
+
+      // Clean and format the content
+      content = content
+        .trim()
+        .replace(/^```text\s*|```$/g, '')  // Remove any markdown code blocks
+        .replace(/\\n/g, '\n')             // Replace escaped newlines
+        .replace(/\n{3,}/g, '\n\n')       // Replace multiple newlines with double newlines
+        .trim();
+
+      // Add date and contact information if not present
+      const today = new Date().toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
       });
+
+      // Only add header if it's not already present
+      if (!content.includes(today)) {
+        const headerInfo = `${today}
+
+${name}
+${email}
+${phone}
+
+${companyName}
+
+Dear Hiring Manager,
+
+`;
+        content = headerInfo + content;
+      }
+
+      // Ensure proper closing if not present
+      if (!content.toLowerCase().includes('sincerely')) {
+        content += `\n\nSincerely,\n${name}`;
+      }
+
+      // Ensure we have actual content
+      if (!content || content.length < 100) {
+        throw new Error('Generated content is too short or empty');
+      }
+
+      // Return the content as a plain string
+      res.json({ coverLetter: content });
     } catch (error) {
       console.error("Error generating cover letter:", error);
-      res.status(500).json({ error: "Failed to generate cover letter" });
+      res.status(500).json({ 
+        message: "Failed to generate cover letter. Please try again."
+      });
     }
   });
 
@@ -1157,31 +1382,107 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
   app.post('/api/calculate-job-match', isAuthenticated, async (req, res) => {
     try {
       const { resumeContent, jobDescription } = req.body;
+      const userId = Number((req.user as User).id);
       
-      const response = await genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT }).generateContent({
-        // model: "gpt-4o-mini",
-        contents: [
-          {
-            role: "user",
-            parts: [{
-              text: `You are an expert job matching algorithm. Calculate a match score between a resume and job description. Identify matching and missing keywords. Return your analysis in JSON format.\n\nResume: ${JSON.stringify(resumeContent)}\n\nJob Description: ${jobDescription}`
-            }]
-          }
-        ]
-      });
+      if (!resumeContent || !jobDescription) {
+        return res.json({
+          score: 0,
+          missingKeywords: [],
+          matchingKeywords: []
+        });
+      }
 
-      const defaultScore = Math.floor(Math.random() * (85 - 65 + 1)) + 65; // Generate random score between 65-85
-      const content = response.response.text() || `{"score":${defaultScore},"missingKeywords":[],"matchingKeywords":[]}`;
-      const result = JSON.parse(content);
+      const model = genAI.getGenerativeModel({ model: MODEL_CONFIG.DEFAULT });
+      const prompt = `As an expert job matching algorithm, analyze this resume against the job description.
+      Provide a match score and identify matching and missing keywords.
       
+      Resume: ${JSON.stringify(resumeContent)}
+      Job Description: ${jobDescription}
+      
+      Respond with ONLY a JSON object in this EXACT format (no markdown, no explanation):
+      {"score": number, "matchingKeywords": string[], "missingKeywords": string[]}`;
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      let content = response.text();
+
+      // Clean the response to ensure valid JSON
+      content = content.replace(/```json\s*|\s*```/g, '').trim();
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      content = jsonMatch ? jsonMatch[0] : '{"score":0,"matchingKeywords":[],"missingKeywords":[]}';
+
+      // Parse the cleaned content
+      let parsedResult;
+      try {
+        parsedResult = JSON.parse(content);
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', parseError);
+        parsedResult = {
+          score: 0,
+          matchingKeywords: [],
+          missingKeywords: []
+        };
+      }
+
+      // Ensure valid score
+      const score = typeof parsedResult.score === 'number'
+        ? Math.min(100, Math.max(0, Math.round(parsedResult.score)))
+        : 0;
+
+      // Ensure valid arrays
+      const matchingKeywords = Array.isArray(parsedResult.matchingKeywords)
+        ? parsedResult.matchingKeywords
+        : [];
+      const missingKeywords = Array.isArray(parsedResult.missingKeywords)
+        ? parsedResult.missingKeywords
+        : [];
+
+      // Store the job match score in the user's profile
+      try {
+        await storage.updateUser(Number(userId), {
+          jobMatchScore: score,
+          lastJobMatch: new Date()
+        });
+      } catch (updateError) {
+        console.error('Error updating user job match score:', updateError);
+        // Continue even if update fails - we still want to return the score
+      }
+
       res.json({
-        score: result.score || 70,
-        missingKeywords: result.missingKeywords || [],
-        matchingKeywords: result.matchingKeywords || []
+        score,
+        matchingKeywords,
+        missingKeywords
       });
     } catch (error) {
       console.error("Error calculating job match score:", error);
-      res.status(500).json({ error: "Failed to calculate job match score" });
+      res.json({
+        score: 0,
+        matchingKeywords: [],
+        missingKeywords: []
+      });
+    }
+  });
+
+  // User stats route
+  app.get("/api/user/stats", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as User).id;
+      const user = await storage.getUser(userId);
+
+      const stats = {
+        jobMatchScore: user?.jobMatchScore || 0,
+        lastJobMatch: user?.lastJobMatch || new Date(),
+        mockInterviewsCount: user?.mockInterviewsCount || 0,
+        atsScore: user?.atsScore || 0,
+        lastAtsUpdate: user?.lastAtsUpdate || null
+      };
+
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching user stats:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to fetch user stats" 
+      });
     }
   });
 
@@ -1224,7 +1525,7 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
 
   // Add question type checkers
   function isTypeTechnical(question: string): boolean {
-    return question.toLowerCase().includes('technical') || 
+    return question.toLowerCase().includes('technical') ||
            question.toLowerCase().includes('technology') ||
            question.toLowerCase().includes('code') ||
            question.toLowerCase().includes('programming');
