@@ -120,6 +120,7 @@ export const mockInterviews = pgTable("mock_interviews", {
   feedback: jsonb("feedback"),
   transcript: text("transcript"),
   videoUrl: text("video_url"),
+  emotionData: jsonb("emotion_data"), // Add new field for emotion analysis data
   date: timestamp("date").defaultNow().notNull(),
 });
 
@@ -131,6 +132,7 @@ export const insertMockInterviewSchema = z.object({
   feedback: z.any().optional().nullable(),
   transcript: z.string().optional().nullable(),
   videoUrl: z.string().optional().nullable(),
+  emotionData: z.any().optional().nullable(), // Optional emotion analysis data
 });
 
 // Job Posting table

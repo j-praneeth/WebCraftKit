@@ -1486,6 +1486,151 @@ Dear Hiring Manager,
     }
   });
 
+  // Add this near the other interview-related routes
+  app.post('/api/mock-interviews/:id/emotions', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as User).id;
+      const interviewId = req.params.id;
+      
+      // Validate the user has access to this interview
+      const interview = await storage.getMockInterview(interviewId);
+      
+      if (!interview) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+      
+      if (String(interview.userId) !== String(userId)) {
+        return res.status(403).json({ message: "You don't have permission to access this interview" });
+      }
+      
+      // Get the emotion data from the request
+      const { emotionData } = req.body;
+      
+      if (!emotionData || !Array.isArray(emotionData)) {
+        return res.status(400).json({ message: "Invalid emotion data format" });
+      }
+      
+      // Store emotion data in the interview record
+      // We'll add to the feedback object if it exists, otherwise create a new one
+      let feedback: any = interview.feedback || {};
+      
+      // If feedback is a string, convert to object
+      if (typeof feedback === 'string') {
+        try {
+          feedback = JSON.parse(feedback);
+        } catch (e) {
+          feedback = { overall: feedback };
+        }
+      }
+      
+      // Add emotion data to feedback
+      feedback.emotionAnalysis = {
+        rawData: emotionData,
+        summary: generateEmotionSummary(emotionData)
+      };
+      
+      // Update the interview with the new feedback
+      const updatedInterview = await storage.updateMockInterview(interviewId, {
+        feedback
+      });
+      
+      res.json({
+        success: true,
+        message: "Emotion data saved successfully",
+        emotionSummary: feedback.emotionAnalysis.summary
+      });
+    } catch (error) {
+      console.error("Error saving emotion data:", error);
+      res.status(500).json({
+        message: error instanceof Error ? error.message : "An unknown error occurred"
+      });
+    }
+  });
+
+  // Helper function to generate an emotion summary
+  function generateEmotionSummary(emotionData: any[]) {
+    if (!emotionData || emotionData.length === 0) {
+      return { message: "No emotion data available" };
+    }
+    
+    try {
+      // Calculate average for each emotion
+      const emotionTotals: Record<string, number> = {
+        neutral: 0,
+        happy: 0,
+        sad: 0,
+        angry: 0,
+        fearful: 0,
+        surprised: 0,
+        disgusted: 0
+      };
+      
+      // Count occurrences of each emotion
+      let samples = 0;
+      
+      emotionData.forEach(data => {
+        if (data && typeof data === 'object') {
+          Object.keys(emotionTotals).forEach(emotion => {
+            if (typeof data[emotion] === 'number') {
+              emotionTotals[emotion] += data[emotion];
+            }
+          });
+          samples++;
+        }
+      });
+      
+      // Calculate averages
+      const averages: Record<string, number> = {};
+      Object.keys(emotionTotals).forEach(emotion => {
+        averages[emotion] = samples > 0 ? emotionTotals[emotion] / samples : 0;
+      });
+      
+      // Find the dominant emotion
+      let dominantEmotion = 'neutral';
+      let maxValue = 0;
+      
+      Object.entries(averages).forEach(([emotion, value]) => {
+        if (value > maxValue) {
+          maxValue = value;
+          dominantEmotion = emotion;
+        }
+      });
+      
+      // Calculate confidence score (weighted mix of neutral and happy)
+      const confidenceScore = Math.round((averages.neutral * 0.2 + averages.happy * 0.8) * 100);
+      
+      // Generate observations
+      const observations = [];
+      
+      if (averages.neutral > 0.6) {
+        observations.push("Maintained a calm and composed demeanor throughout the interview");
+      }
+      
+      if (averages.happy > 0.4) {
+        observations.push("Showed positive engagement and enthusiasm");
+      }
+      
+      if (averages.fearful > 0.3) {
+        observations.push("Displayed signs of nervousness during parts of the interview");
+      }
+      
+      if (averages.surprised > 0.3) {
+        observations.push("Showed surprise at some questions, indicating possible unfamiliarity with topics");
+      }
+      
+      // Prepare final summary
+      return {
+        dominantEmotion,
+        confidenceScore,
+        averages,
+        observations: observations.length > 0 ? observations : ["No significant emotional patterns detected"],
+      };
+    } catch (error) {
+      console.error("Error generating emotion summary:", error);
+      return { message: "Error analyzing emotion data" };
+    }
+  }
+
   // Create the HTTP server
   const httpServer = createServer(app);
   

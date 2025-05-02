@@ -673,13 +673,13 @@ export class MongoStorage implements IStorage {
       createdAt: question.createdAt
     };
   }
-
   private convertMongoMockInterviewToSchemaMockInterview(interview: any): MockInterview {
     return {
       id: interview._id.toString(),
       userId: interview.userId.toString(),
       title: interview.title,
       score: interview.score,
+      emotionData: interview.emotionData,
       feedback: interview.feedback,
       transcript: interview.transcript || null,
       videoUrl: interview.videoUrl || null,

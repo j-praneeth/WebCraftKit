@@ -165,7 +165,11 @@ function MockInterviews() {
           <CardContent className="pt-6">
             <VideoInterviewSimulator 
               jobRole={selectedJobRole} 
-              onComplete={handleInterviewComplete} 
+              onComplete={(result) => {
+                // Convert the Promise-returning function to a synchronous one
+                handleInterviewComplete(result);
+                return undefined; // Return void to satisfy the type requirement
+              }} 
             />
           </CardContent>
         </Card>
