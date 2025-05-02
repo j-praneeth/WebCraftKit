@@ -217,6 +217,8 @@ export type User = {
   providerId: string | null;
   jobMatchScore: number;
   lastJobMatch: Date | null;
+  atsScore?: number;
+  lastAtsUpdate?: Date | null;
 };
 
 export type InsertResumeTemplate = z.infer<typeof insertResumeTemplateSchema>;

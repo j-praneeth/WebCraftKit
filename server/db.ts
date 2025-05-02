@@ -56,7 +56,7 @@ resumeSchema.pre(['updateOne', 'findOneAndUpdate'], function(next) {
 });
 
 const coverLetterSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: mongoose.Schema.Types.Mixed, ref: 'User', required: true }, // Accept both string and ObjectId
   title: { type: String, required: true },
   content: { type: String, required: true },
   jobTitle: { type: String },
@@ -66,7 +66,7 @@ const coverLetterSchema = new mongoose.Schema({
 });
 
 const interviewQuestionSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: mongoose.Schema.Types.Mixed, ref: 'User', required: true }, // Accept both string and ObjectId
   question: { type: String, required: true },
   answer: { type: String },
   category: { type: String },
@@ -75,7 +75,7 @@ const interviewQuestionSchema = new mongoose.Schema({
 });
 
 const mockInterviewSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userId: { type: mongoose.Schema.Types.Mixed, ref: 'User', required: true }, // Accept both string and ObjectId
   title: { type: String, required: true },
   transcript: { type: String },
   feedback: { type: Object },

@@ -48,8 +48,14 @@ function MockInterviews() {
     }
     
     try {
+      console.log("Starting interview with user:", user);
+      if (!user || !user.id) {
+        throw new Error("User information not available");
+      }
+      
       // Create a mock interview entry in the database
-      await createMockInterviewMutation.mutateAsync({
+      const response = await createMockInterviewMutation.mutateAsync({
+        userId: user.id, // Explicitly include userId
         title: `Interview for ${selectedJobRole} position`,
         date: new Date(),
         score: null,
@@ -57,6 +63,8 @@ function MockInterviews() {
         transcript: null,
         videoUrl: null
       });
+      
+      console.log("Interview created:", response);
       
       // Show the interview simulator
       setShowInterviewSim(true);

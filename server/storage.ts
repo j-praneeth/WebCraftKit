@@ -6,18 +6,19 @@ import {
   InterviewQuestion, InsertInterviewQuestion,
   MockInterview, InsertMockInterview,
   Organization, InsertOrganization,
-  JobApplication, InsertJobApplication // Add these new types
+  JobApplication, InsertJobApplication,
+  JobPosting, InsertJobPosting
 } from "@shared/schema";
 
 export interface IStorage {
-  getUserByUsername(username: string): unknown;
+  getUserByUsername(username: string): Promise<User | undefined>;
   // User methods
   getUser(id: string | number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByProvider(provider: string, providerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
-  updateMockInterviewCount(userId: number): Promise<number>;
+  updateUser(id: string | number, data: Partial<User>): Promise<User | undefined>;
+  updateMockInterviewCount(userId: string | number): Promise<number>;
   
   // Resume Template methods
   getResumeTemplate(id: number | string): Promise<ResumeTemplate | undefined>;
@@ -61,6 +62,11 @@ export interface IStorage {
   // Organization methods
   getOrganization(id: string | number): Promise<Organization | undefined>;
   createOrganization(organization: InsertOrganization): Promise<Organization>;
+  
+  // Job Posting methods
+  getJobPosting(id: string | number): Promise<JobPosting | undefined>;
+  getJobPostings(limit?: number): Promise<JobPosting[]>;
+  createJobPosting?(job: InsertJobPosting): Promise<JobPosting>;
   
   // Pricing Plan methods (optional)
   getPricingPlans?(): Promise<any[]>;

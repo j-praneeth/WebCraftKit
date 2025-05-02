@@ -26,20 +26,50 @@ import {
   InsertMockInterview, 
   InsertJobPosting, 
   InsertOrganization,
-  InsertResumeTemplate
+  InsertResumeTemplate,
+  InsertJobApplication,
+  JobApplication
 } from '../shared/schema';
 
 import { IStorage } from './storage';
 import mongoose from 'mongoose';
 
 export class MongoStorage implements IStorage {
+  getJobApplication(id: string | number): Promise<JobApplication | undefined> {
+    throw new Error('Method not implemented.');
+  }
+  getJobApplicationsByUserId(userId: string | number): Promise<JobApplication[]> {
+    throw new Error('Method not implemented.');
+  }
+  getJobApplicationsByJobId(jobId: string | number): Promise<JobApplication[]> {
+    throw new Error('Method not implemented.');
+  }
+  createJobApplication(application: InsertJobApplication): Promise<JobApplication> {
+    throw new Error('Method not implemented.');
+  }
+  updateJobApplication(id: string | number, data: Partial<JobApplication>): Promise<JobApplication | undefined> {
+    throw new Error('Method not implemented.');
+  }
+  deleteJobApplication(id: string | number): Promise<boolean> {
+    throw new Error('Method not implemented.');
+  }
   getUserByProvider(provider: string, providerId: string): Promise<User | undefined> {
     throw new Error('Method not implemented.');
   }
   // User methods
-  async getUser(id: number): Promise<User | undefined> {
+  async getUser(id: number | string): Promise<User | undefined> {
     try {
-      const user = await UserModel.findById(id);
+      // Ensure we have a valid ID by converting to string
+      // MongoDB will handle the ObjectId conversion
+      let userId = String(id);
+      
+      // Check for NaN - prevent NaN being converted to "NaN" string
+      if (typeof id === 'number' && isNaN(id)) {
+        console.error('Invalid user ID (NaN) provided to getUser');
+        return undefined;
+      }
+      
+      const user = await UserModel.findById(userId);
       if (!user) return undefined;
       
       return this.convertMongoUserToSchemaUser(user);
@@ -85,10 +115,16 @@ export class MongoStorage implements IStorage {
     }
   }
 
-  async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
+  async updateUser(id: number | string, data: Partial<User>): Promise<User | undefined> {
     try {
-      // Convert number ID to string for MongoDB
-      const userId = id.toString();
+      // Check for NaN - prevent NaN being converted to "NaN" string
+      if (typeof id === 'number' && isNaN(id)) {
+        console.error('Invalid user ID (NaN) provided to updateUser');
+        return undefined;
+      }
+      
+      // Convert ID to string for MongoDB
+      const userId = String(id);
       const user = await UserModel.findByIdAndUpdate(
         userId,
         { ...data, updatedAt: new Date() },
@@ -103,9 +139,16 @@ export class MongoStorage implements IStorage {
     }
   }
   
-  async updateMockInterviewCount(userId: number): Promise<number> {
+  async updateMockInterviewCount(userId: number | string): Promise<number> {
     try {
-      const user = await UserModel.findById(userId);
+      // Check for NaN - prevent NaN being converted to "NaN" string
+      if (typeof userId === 'number' && isNaN(userId)) {
+        console.error('Invalid user ID (NaN) provided to updateMockInterviewCount');
+        throw new Error("Invalid user ID");
+      }
+      
+      const userIdStr = String(userId);
+      const user = await UserModel.findById(userIdStr);
       if (!user) throw new Error("User not found");
       
       // Increment the count
@@ -403,13 +446,48 @@ export class MongoStorage implements IStorage {
 
   async createMockInterview(insertInterview: InsertMockInterview): Promise<MockInterview> {
     try {
-      const interview = new MockInterviewModel(insertInterview);
+      // Ensure userId is a valid string - handle both number and string types
+      if (!insertInterview.userId) {
+        console.error("Missing userId in mock interview data:", insertInterview);
+        throw new Error("Missing userId in mock interview data");
+      }
+      
+      // Check for NaN value
+      if (typeof insertInterview.userId === 'number' && isNaN(insertInterview.userId)) {
+        console.error("Invalid NaN userId in mock interview data");
+        throw new Error("Invalid userId (NaN) in mock interview data");
+      }
+      
+      // Ensure we have a valid string ID for MongoDB
+      const userId = String(insertInterview.userId);
+      
+      // Check if it's a valid ObjectId format for MongoDB
+      if (!mongoose.Types.ObjectId.isValid(userId) && userId !== "NaN") {
+        console.warn(`Non-standard ObjectId format for userId: ${userId}, will attempt to use as-is`);
+      }
+      
+      // Create mock interview with validated userId
+      const interviewData = {
+        ...insertInterview,
+        userId: userId
+      };
+      
+      console.log("Creating mock interview with data:", {
+        ...interviewData,
+        title: interviewData.title,
+        userId: interviewData.userId
+      });
+      
+      const interview = new MockInterviewModel(interviewData);
       const savedInterview = await interview.save();
       
       return this.convertMongoMockInterviewToSchemaMockInterview(savedInterview);
     } catch (error) {
       console.error('Error creating mock interview:', error);
-      throw new Error('Failed to create mock interview');
+      throw new Error(error instanceof Error ? 
+        `Failed to create mock interview: ${error.message}` : 
+        'Failed to create mock interview'
+      );
     }
   }
 
@@ -445,9 +523,11 @@ export class MongoStorage implements IStorage {
   }
 
   // Job Posting methods
-  async getJobPosting(id: number): Promise<JobPosting | undefined> {
+  async getJobPosting(id: string | number): Promise<JobPosting | undefined> {
     try {
-      const job = await JobPostingModel.findById(id);
+      // Convert the id to string if it's a number to ensure MongoDB compatibility
+      const jobId = String(id);
+      const job = await JobPostingModel.findById(jobId);
       if (!job) return undefined;
       
       return this.convertMongoJobPostingToSchemaJobPosting(job);
@@ -456,18 +536,17 @@ export class MongoStorage implements IStorage {
       return undefined;
     }
   }
-
+  
   async getJobPostings(limit: number = 10): Promise<JobPosting[]> {
     try {
       const jobs = await JobPostingModel.find().limit(limit);
-      
       return jobs.map(job => this.convertMongoJobPostingToSchemaJobPosting(job));
     } catch (error) {
       console.error('Error getting job postings:', error);
       return [];
     }
   }
-
+  
   async createJobPosting(insertJob: InsertJobPosting): Promise<JobPosting> {
     try {
       const job = new JobPostingModel(insertJob);

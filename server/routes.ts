@@ -800,7 +800,15 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
   // Reset mock interview count endpoint
   app.get("/api/mock-interviews/reset-count", isAuthenticated, async (req, res) => {
     try {
-      const userId = Number((req.user as User).id);
+      const userId = (req.user as User).id;
+      
+      // Validate that userId is not NaN
+      if (typeof userId === 'number' && isNaN(userId)) {
+        return res.status(400).json({
+          message: "Invalid user ID",
+          details: "User ID appears to be NaN"
+        });
+      }
       
       // Get the actual count of mock interviews for this user
       const interviews = await storage.getMockInterviewsByUserId(userId);
@@ -825,13 +833,34 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
 
   app.post("/api/mock-interviews", isAuthenticated, async (req, res) => {
     try {
-      const userId = Number((req.user as User).id);
+      // Make sure we have a valid userId (string or number)
+      const userId = (req.user as User).id;
+      console.log("Auth user ID from session:", userId);
+      console.log("Request body:", req.body);
+      
+      // Validate that userId is not NaN
+      if (typeof userId === 'number' && isNaN(userId)) {
+        return res.status(400).json({
+          message: "Invalid user ID",
+          details: "User ID appears to be NaN"
+        });
+      }
+
+      // Try to get the user from storage 
       const user = await storage.getUser(userId);
-  
-      const mockInterviewsCount = user?.mockInterviewsCount ?? 0;
-  
+      console.log("Retrieved user:", user ? `ID: ${user.id}, Email: ${user.email}` : "User not found");
+      
+      if (!user) {
+        return res.status(404).json({
+          message: "User not found",
+          details: `Could not find user with ID: ${userId}`
+        });
+      }
+
+      const mockInterviewsCount = user.mockInterviewsCount ?? 0;
+
       // For free plan users, check if they've reached their limit
-      if (user?.plan === 'free' && mockInterviewsCount >= 3) {
+      if (user.plan === 'free' && mockInterviewsCount >= 3) {
         return res.status(403).json({
           message: "Free plan limited to 3 mock interviews. Please upgrade to continue.",
           currentCount: mockInterviewsCount,
@@ -839,72 +868,34 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
           canUpgrade: true
         });
       }
-  
-      // Create the mock interview
+
+      // Ensure userId is properly handled as a string when sending to MongoDB
       const interviewData = {
         ...req.body,
-        userId
+        userId: String(userId)  // Explicitly convert to string
       };
-  
+      
+      console.log("Creating interview with data:", interviewData);
+
       const interview = await storage.createMockInterview(interviewData);
-  
+      console.log("Interview created:", interview.id);
+
       // Update the user's interview count in DB
       await storage.updateUser(userId, { mockInterviewsCount: mockInterviewsCount + 1 });
-  
+      console.log("Updated user interview count to:", mockInterviewsCount + 1);
+
       res.status(201).json({
         interview,
         mockInterviewsCount: mockInterviewsCount + 1,
-        limit: user?.plan === 'free' ? 3 : null
+        limit: user.plan === 'free' ? 3 : null
       });
     } catch (error) {
+      console.error("Error creating mock interview:", error);
       res.status(400).json({
         message: error instanceof Error ? error.message : "An unknown error occurred"
       });
     }
   });
-  
-  
-  // app.post("/api/mock-interviews", isAuthenticated, async (req, res) => {
-  //   try {
-  //     const userId = (req.user as User).id;
-  //     const user = await storage.getUser(userId);
-      
-  //     // Get current interview count from actual interviews
-  //     const currentInterviews = await storage.getMockInterviewsByUserId(userId);
-  //     const actualCount = currentInterviews.length;
-      
-  //     // For free plan users, check if they've reached their limit (3 mock interviews)
-  //     if (user?.plan === 'free') {
-  //       if (actualCount >= 3) {
-  //         return res.status(403).json({
-  //           message: "Free plan limited to 3 mock interviews. Please upgrade to continue.",
-  //           currentCount: actualCount,
-  //           limit: 3,
-  //           canUpgrade: true
-  //         });
-  //       }
-  //     }
-      
-  //     // Create the mock interview
-  //     const interviewData = {
-  //       ...req.body,
-  //       userId
-  //     };
-      
-  //     const interview = await storage.createMockInterview(interviewData);
-      
-  //     // Update the user's interview count to match actual count
-  //     await storage.updateUser(userId, { mockInterviewsCount: actualCount + 1 });
-      
-  //     res.status(201).json({
-  //       interview,
-  //       mockInterviewsCount: actualCount + 1,
-  //       limit: user?.plan === 'free' ? 3 : null
-  //     });
-  //   } catch (error) {
-  //     res.status(400).json({ message: error instanceof Error ? error.message : "An unknown error occurred" });
-  //   }
-  // });
   
   app.patch("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
     try {
@@ -936,7 +927,16 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
   // Delete mock interview endpoint
   app.delete("/api/mock-interviews/:id", isAuthenticated, async (req, res) => {
     try {
-      const userId = Number((req.user as User).id);
+      const userId = (req.user as User).id;
+      
+      // Validate that userId is not NaN
+      if (typeof userId === 'number' && isNaN(userId)) {
+        return res.status(400).json({
+          message: "Invalid user ID",
+          details: "User ID appears to be NaN"
+        });
+      }
+      
       const interviewId = req.params.id;
       
       // Verify the interview exists and belongs to the user
