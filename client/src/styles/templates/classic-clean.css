@@ -1,0 +1,169 @@
+.classic-clean {
+  @apply p-8;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  color: #1F2937;
+  line-height: 1.6;
+  background-color: #FFFFFF;
+}
+
+.classic-clean .header {
+  @apply mb-10;
+  border-bottom: 2px solid #14181B;
+}
+
+.classic-clean .name {
+  @apply text-4xl font-bold mb-2;
+  color: #14181B;
+  letter-spacing: 0.05em;
+}
+
+.classic-clean .title {
+  @apply text-xl mb-4;
+  color: #4B5563;
+}
+
+.classic-clean .contact-info {
+  @apply flex flex-wrap gap-6 text-base mb-6;
+  color: #4B5563;
+}
+
+.classic-clean .contact-item {
+  @apply flex items-center gap-2;
+}
+
+.classic-clean .contact-item svg {
+  @apply w-4 h-4;
+  color: #14181B;
+}
+
+.classic-clean .main-content {
+  @apply grid grid-cols-[65%_35%] gap-8;
+}
+
+.classic-clean .left-column {
+  @apply pr-8;
+  border-right: 1px solid #E5E7EB;
+}
+
+.classic-clean .right-column {
+  @apply pl-8;
+}
+
+.classic-clean .section {
+  @apply mb-8;
+}
+
+.classic-clean .section-title {
+  @apply text-2xl font-bold mb-6;
+  color: #14181B;
+  border-bottom: 1px solid #E5E7EB;
+  padding-bottom: 0.5rem;
+}
+
+.classic-clean .experience-item,
+.classic-clean .education-item {
+  @apply mb-6 last:mb-0;
+}
+
+.classic-clean .item-header {
+  @apply mb-3;
+}
+
+.classic-clean .item-title {
+  @apply text-lg font-bold;
+  color: #14181B;
+}
+
+.classic-clean .item-subtitle {
+  @apply text-base;
+  color: #4B5563;
+}
+
+.classic-clean .item-duration {
+  @apply text-sm;
+  color: #6B7280;
+  font-style: italic;
+}
+
+.classic-clean .item-description {
+  @apply text-base leading-relaxed;
+  color: #4B5563;
+}
+
+.classic-clean .skills-section {
+  @apply mb-8;
+}
+
+.classic-clean .skills-list {
+  @apply space-y-2;
+}
+
+.classic-clean .skill-category {
+  @apply mb-4 last:mb-0;
+}
+
+.classic-clean .skill-category-title {
+  @apply text-base font-bold mb-2;
+  color: #14181B;
+}
+
+.classic-clean .skill-items {
+  @apply pl-4;
+  list-style-type: disc;
+}
+
+.classic-clean .skill-item {
+  @apply text-base;
+  color: #4B5563;
+}
+
+.classic-clean .certifications-list {
+  @apply space-y-4;
+}
+
+.classic-clean .certification-item {
+  @apply border-l-4 pl-4 py-2;
+  border-color: #14181B;
+}
+
+.classic-clean .certification-title {
+  @apply text-base font-bold;
+  color: #14181B;
+}
+
+.classic-clean .certification-issuer {
+  @apply text-sm;
+  color: #6B7280;
+}
+
+.classic-clean .certification-date {
+  @apply text-sm;
+  color: #6B7280;
+  font-style: italic;
+}
+
+@media print {
+  .classic-clean {
+    @apply p-0;
+  }
+
+  .classic-clean .main-content {
+    @apply gap-6;
+  }
+
+  .classic-clean .left-column {
+    @apply pr-6;
+  }
+
+  .classic-clean .right-column {
+    @apply pl-6;
+  }
+
+  .classic-clean .section {
+    @apply mb-6;
+  }
+
+  .classic-clean .section-title {
+    @apply mb-4;
+  }
+} 

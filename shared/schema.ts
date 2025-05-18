@@ -180,26 +180,36 @@ export const insertOrganizationSchema = createInsertSchema(organizations).pick({
 // Job Applications table
 export const jobApplications = pgTable("job_applications", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").notNull(), // Changed to text to support MongoDB ObjectIds
-  jobPostingId: text("job_posting_id").notNull(), // Changed to text to support MongoDB ObjectIds
+  userId: text("user_id").notNull(),
+  jobPostingId: text("job_posting_id").notNull(), // Always store as text to support external job IDs
   resumeId: text("resume_id"),
   coverLetterId: text("cover_letter_id"),
-  status: text("status").default("applied").notNull(), // applied, interviewing, rejected, offered, accepted
+  status: text("status").default("applied").notNull(),
   appliedDate: timestamp("applied_date").defaultNow().notNull(),
   notes: text("notes"),
   followUpDate: timestamp("follow_up_date"),
   lastUpdated: timestamp("last_updated").defaultNow().notNull(),
+  source: text("source").default("Internal").notNull(), // Add source to track where the job came from
+  jobTitle: text("job_title"), // Store job title for external jobs
+  company: text("company"), // Store company name for external jobs
+  jobUrl: text("job_url"), // Store job URL for external jobs
+  location: text("location"), // Store location for external jobs
 });
 
-// Use custom schema for Job Applications to support MongoDB IDs
+// Use custom schema for Job Applications to support external job IDs
 export const insertJobApplicationSchema = z.object({
-  userId: z.union([z.string(), z.number()]),
-  jobPostingId: z.union([z.string(), z.number()]),
-  resumeId: z.union([z.string(), z.number()]).optional().nullable(),
-  coverLetterId: z.union([z.string(), z.number()]).optional().nullable(),
+  userId: z.string(),
+  jobPostingId: z.string(), // Always expect string for job IDs
+  resumeId: z.string().optional().nullable(),
+  coverLetterId: z.string().optional().nullable(),
   status: z.string().default("applied"),
   notes: z.string().optional().nullable(),
   followUpDate: z.date().optional().nullable(),
+  source: z.string().default("Internal"),
+  jobTitle: z.string().optional(),
+  company: z.string().optional(),
+  jobUrl: z.string().optional(),
+  location: z.string().optional()
 });
 
 // Types

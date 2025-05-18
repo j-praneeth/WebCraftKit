@@ -1,0 +1,165 @@
+.simple-elegant {
+  @apply p-8;
+  font-family: 'Times New Roman', 'Georgia', serif;
+  color: #333333;
+  line-height: 1.6;
+  background-color: #FFFFFF;
+}
+
+.simple-elegant .header {
+  @apply mb-8;
+  background-color: #6A5ACD;
+  border-bottom: 2px solid #5B4DBE;
+  padding: 2rem;
+}
+
+.simple-elegant .name {
+  @apply text-3xl font-bold mb-2 text-center;
+  color: #FFFFFF;
+  letter-spacing: 0.05em;
+}
+
+.simple-elegant .title {
+  @apply text-xl mb-4 text-center;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.simple-elegant .contact-info {
+  @apply flex justify-center flex-wrap gap-6 text-sm;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.simple-elegant .contact-item {
+  @apply flex items-center gap-2;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.simple-elegant .section {
+  @apply mb-8 p-6 rounded-lg;
+  background-color: #FFFFFF;
+  border: 1px solid #6A5ACD;
+}
+
+.simple-elegant .section-title {
+  @apply text-2xl font-bold mb-4;
+  color: #6A5ACD;
+  border-bottom: 2px solid #6A5ACD;
+  padding-bottom: 0.5rem;
+}
+
+.simple-elegant .experience-item,
+.simple-elegant .education-item,
+.simple-elegant .project-item {
+  @apply mb-6 last:mb-0;
+  padding: 1rem;
+  background-color: #F8F8FF;
+  border-radius: 0.5rem;
+}
+
+.simple-elegant .item-header {
+  @apply flex justify-between items-start mb-2;
+}
+
+.simple-elegant .item-title {
+  @apply text-lg font-bold;
+  color: #333333;
+}
+
+.simple-elegant .item-subtitle {
+  @apply text-base;
+  color: #666666;
+}
+
+.simple-elegant .item-duration {
+  @apply text-sm;
+  color: #6A5ACD;
+  font-style: italic;
+}
+
+.simple-elegant .item-description {
+  @apply text-base leading-relaxed;
+  color: #4A4A4A;
+}
+
+.simple-elegant .skills-list {
+  @apply grid grid-cols-2 md:grid-cols-3 gap-4;
+}
+
+.simple-elegant .skill-category {
+  @apply mb-4 last:mb-0;
+}
+
+.simple-elegant .skill-category-title {
+  @apply text-lg font-bold mb-2;
+  color: #6A5ACD;
+}
+
+.simple-elegant .skill-item {
+  @apply p-2 rounded;
+  background-color: #F8F8FF;
+  color: #6A5ACD;
+  text-align: center;
+  transition: all 0.2s ease;
+  border: 1px solid #6A5ACD;
+}
+
+.simple-elegant .skill-item:hover {
+  background-color: #6A5ACD;
+  color: #FFFFFF;
+}
+
+.simple-elegant .certifications-list {
+  @apply space-y-4;
+}
+
+.simple-elegant .certification-item {
+  @apply p-4 rounded;
+  background-color: #F8F8FF;
+  border-left: 3px solid #6A5ACD;
+}
+
+.simple-elegant .certification-title {
+  @apply text-base font-bold;
+  color: #6A5ACD;
+}
+
+.simple-elegant .certification-issuer {
+  @apply text-sm;
+  color: #666666;
+}
+
+.simple-elegant .certification-date {
+  @apply text-sm;
+  color: #666666;
+  font-style: italic;
+}
+
+@media print {
+  .simple-elegant {
+    @apply p-0;
+  }
+
+  .simple-elegant .header {
+    @apply mb-6;
+    background-color: #6A5ACD;
+    border-bottom-color: #5B4DBE;
+  }
+
+  .simple-elegant .section {
+    @apply mb-6 p-4;
+    border-color: #6A5ACD;
+  }
+
+  .simple-elegant .experience-item,
+  .simple-elegant .education-item,
+  .simple-elegant .project-item,
+  .simple-elegant .certification-item {
+    background-color: #FFFFFF;
+  }
+
+  .simple-elegant .skill-item {
+    background-color: #FFFFFF;
+    border: 1px solid #6A5ACD;
+    color: #6A5ACD;
+  }
+} 

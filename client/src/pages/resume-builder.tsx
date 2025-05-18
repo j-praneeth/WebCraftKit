@@ -12,15 +12,19 @@ function ResumeBuilder() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const [showAllResumes, setShowAllResumes] = useState(false);
 
   // Fetch resumes
   const { 
-    data: resumes,
+    data: resumes = [], // Provide empty array as default value
     isLoading: isLoadingResumes 
   } = useQuery<Resume[]>({
     queryKey: ["/api/resumes"],
     enabled: !!user,
   });
+
+  // Get the resumes to display based on showAllResumes state
+  const displayedResumes = showAllResumes ? resumes : resumes.slice(0, 3);
 
   // Handlers
   const handleEditResume = (id: number | string) => {
@@ -85,6 +89,15 @@ function ResumeBuilder() {
           <Button onClick={handleCreateNewResume} className="ml-3 flex items-center">
             <i className="ri-add-line mr-1"></i> New Resume
           </Button>
+          {resumes && resumes.length > 3 && (
+            <Button 
+              variant="link" 
+              onClick={() => setShowAllResumes(!showAllResumes)}
+              className="ml-4 text-primary-600 hover:text-primary-700"
+            >
+              {showAllResumes ? "Minimize All" : `View All (${resumes.length})`}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -97,7 +110,7 @@ function ResumeBuilder() {
             </div>
           ) : resumes && resumes.length > 0 ? (
             <>
-              {resumes.map(resume => (
+              {displayedResumes.map(resume => (
                 <ResumeCard
                   key={resume.id}
                   resume={resume}

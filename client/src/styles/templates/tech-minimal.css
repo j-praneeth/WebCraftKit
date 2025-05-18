@@ -1,0 +1,106 @@
+.tech-minimal-template {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+.tech-minimal-template .header {
+  border-bottom: 2px solid #f0f0f0;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.tech-minimal-template .header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2d2d2d;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.5px;
+}
+
+.tech-minimal-template .header .contact-info {
+  display: flex;
+  gap: 1.5rem;
+  color: #666666;
+  font-size: 0.875rem;
+  font-family: 'Inter', sans-serif;
+}
+
+.tech-minimal-template .section {
+  margin-bottom: 2rem;
+}
+
+.tech-minimal-template .section-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #2d2d2d;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.tech-minimal-template .section-title::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: #e0e0e0;
+  flex-grow: 1;
+  margin-left: 0.75rem;
+}
+
+.tech-minimal-template .item {
+  margin-bottom: 1.25rem;
+  padding: 0.75rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.tech-minimal-template .item:hover {
+  background-color: #f8f8f8;
+}
+
+.tech-minimal-template .item-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.tech-minimal-template .item-title {
+  font-weight: 600;
+  color: #2d2d2d;
+}
+
+.tech-minimal-template .item-subtitle {
+  font-family: 'Inter', sans-serif;
+  color: #666666;
+}
+
+.tech-minimal-template .item-date {
+  color: #888888;
+  font-size: 0.75rem;
+  font-family: 'Inter', sans-serif;
+}
+
+.tech-minimal-template .skills-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tech-minimal-template .skill-item {
+  font-family: 'JetBrains Mono', monospace;
+  background: #f3f3f3;
+  padding: 0.25rem 0.75rem;
+  border-radius: 3px;
+  font-size: 0.8125rem;
+  color: #454545;
+  border: 1px solid #e0e0e0;
+}
+
+.tech-minimal-template .skill-item:hover {
+  background: #e8e8e8;
+  border-color: #d0d0d0;
+} 

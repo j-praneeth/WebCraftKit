@@ -1,0 +1,179 @@
+.compact-modern {
+  @apply p-4;
+  font-family: 'Helvetica', 'Arial', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #333333;
+  background-color: #FFFFFF;
+}
+
+.compact-modern .header {
+  @apply mb-6 p-4;
+  background-color: #000000;
+}
+
+.compact-modern .name-title {
+  @apply mb-3;
+}
+
+.compact-modern .name {
+  @apply text-xl font-bold tracking-tight text-white mb-1;
+}
+
+.compact-modern .title {
+  @apply text-sm text-white/80;
+}
+
+.compact-modern .contact-info {
+  @apply flex flex-wrap gap-2 text-xs;
+}
+
+.compact-modern .contact-item {
+  @apply flex items-center gap-1 px-2 py-1 rounded bg-white/10 text-white/90;
+}
+
+.compact-modern .main-content {
+  @apply grid grid-cols-[60%_40%] gap-6;
+}
+
+.compact-modern .col-1 {
+  @apply pr-6;
+  border-right: 1px solid #F5F5F5;
+}
+
+.compact-modern .col-2 {
+  @apply pl-6;
+}
+
+.compact-modern .section {
+  @apply mb-6 last:mb-0;
+}
+
+.compact-modern .section-title {
+  @apply text-sm font-bold uppercase tracking-wider mb-4;
+  color: #000000;
+  border-bottom: 1px solid #F5F5F5;
+  padding-bottom: 0.5rem;
+}
+
+.compact-modern .experience-item,
+.compact-modern .education-item {
+  @apply mb-4 last:mb-0;
+}
+
+.compact-modern .item-header {
+  @apply mb-2;
+}
+
+.compact-modern .item-title {
+  @apply text-sm font-bold;
+  color: #000000;
+}
+
+.compact-modern .item-subtitle {
+  @apply text-xs;
+  color: #666666;
+}
+
+.compact-modern .item-duration {
+  @apply text-xs;
+  color: #666666;
+}
+
+.compact-modern .item-description {
+  @apply text-xs leading-relaxed;
+  color: #333333;
+}
+
+.compact-modern .skills-list {
+  @apply grid grid-cols-2 gap-2;
+}
+
+.compact-modern .skill-category {
+  @apply mb-4 last:mb-0;
+}
+
+.compact-modern .skill-category-title {
+  @apply text-xs font-bold mb-2;
+  color: #000000;
+}
+
+.compact-modern .skill-item {
+  @apply text-xs;
+  color: #333333;
+}
+
+.compact-modern .certifications-list {
+  @apply space-y-3;
+}
+
+.compact-modern .certification-item {
+  @apply border-l-2 pl-2;
+  border-color: #000000;
+}
+
+.compact-modern .certification-title {
+  @apply text-xs font-bold;
+  color: #000000;
+}
+
+.compact-modern .certification-issuer,
+.compact-modern .certification-date {
+  @apply text-xs;
+  color: #666666;
+}
+
+.compact-modern .projects-list {
+  @apply space-y-4;
+}
+
+.compact-modern .project-item {
+  @apply p-2 rounded;
+  background-color: #F5F5F5;
+}
+
+.compact-modern .project-title {
+  @apply text-xs font-bold mb-1;
+  color: #000000;
+}
+
+.compact-modern .project-description {
+  @apply text-xs;
+  color: #333333;
+}
+
+.compact-modern .project-tech {
+  @apply mt-2 flex flex-wrap gap-1;
+}
+
+.compact-modern .tech-tag {
+  @apply px-1.5 py-0.5 rounded text-[10px] font-medium;
+  background-color: #FFFFFF;
+  color: #000000;
+}
+
+@media print {
+  .compact-modern {
+    @apply p-0;
+  }
+
+  .compact-modern .main-content {
+    @apply gap-4;
+  }
+
+  .compact-modern .col-1 {
+    @apply pr-4;
+  }
+
+  .compact-modern .col-2 {
+    @apply pl-4;
+  }
+
+  .compact-modern .section {
+    @apply mb-4;
+  }
+
+  .compact-modern .project-item {
+    @apply bg-white border border-gray-200;
+  }
+} 

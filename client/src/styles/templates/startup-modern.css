@@ -1,0 +1,105 @@
+.startup-modern {
+  @apply p-6;
+  font-family: 'Calibri', 'Arial', sans-serif;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.startup-modern .header {
+  @apply mb-8 rounded-xl overflow-hidden;
+  background: linear-gradient(135deg, #6366F1, #818CF8);
+  transform: translateY(-1rem);
+  box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.3);
+}
+
+.startup-modern .header-content {
+  @apply p-8;
+  backdrop-filter: blur(10px);
+}
+
+.startup-modern .name {
+  @apply text-4xl font-bold text-white mb-2;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.startup-modern .title {
+  @apply text-xl text-white/90 font-medium mb-4;
+}
+
+.startup-modern .contact-info {
+  @apply flex flex-wrap gap-4 text-sm text-white/80;
+}
+
+.startup-modern .contact-item {
+  @apply flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full backdrop-blur-sm transition-all duration-300;
+  &:hover {
+    @apply bg-white/20;
+  }
+}
+
+.startup-modern .section {
+  @apply mb-8 bg-white rounded-lg p-6 shadow-sm;
+  border: 1px solid rgba(99, 102, 241, 0.1);
+}
+
+.startup-modern .section-title {
+  @apply text-xl font-semibold mb-4 pb-2 text-gray-900;
+  border-bottom: 2px solid #E0E7FF;
+}
+
+.startup-modern .experience-item,
+.startup-modern .education-item,
+.startup-modern .project-item {
+  @apply mb-6 last:mb-0;
+}
+
+.startup-modern .item-header {
+  @apply flex justify-between items-start mb-2;
+}
+
+.startup-modern .item-title {
+  @apply text-lg font-medium text-gray-900;
+}
+
+.startup-modern .item-subtitle {
+  @apply text-sm text-gray-600;
+}
+
+.startup-modern .item-duration {
+  @apply text-sm text-indigo-600 font-medium;
+}
+
+.startup-modern .item-description {
+  @apply text-gray-700 leading-relaxed;
+}
+
+.startup-modern .skills-list {
+  @apply grid grid-cols-2 md:grid-cols-3 gap-3;
+}
+
+.startup-modern .skill-item {
+  @apply bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium;
+  transition: all 0.2s ease;
+  &:hover {
+    @apply bg-indigo-100;
+  }
+}
+
+.startup-modern .certification-item {
+  @apply flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors;
+}
+
+@media print {
+  .startup-modern {
+    @apply p-0 bg-white;
+  }
+  
+  .startup-modern .header {
+    transform: none;
+    box-shadow: none;
+    @apply rounded-none;
+  }
+  
+  .startup-modern .section {
+    @apply shadow-none border-0 p-4;
+  }
+} 

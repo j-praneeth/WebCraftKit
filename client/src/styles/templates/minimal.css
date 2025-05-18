@@ -1,0 +1,77 @@
+.minimal-template {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1e293b;
+  background: #ffffff;
+}
+
+.minimal-template .header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.minimal-template .header h1 {
+  font-size: 2rem;
+  color: #2563eb;
+  margin-bottom: 0.5rem;
+}
+
+.minimal-template .header .contact-info {
+  color: #64748b;
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.minimal-template .section {
+  margin-bottom: 1.5rem;
+}
+
+.minimal-template .section-title {
+  color: #2563eb;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.minimal-template .item {
+  margin-bottom: 1rem;
+}
+
+.minimal-template .item-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.minimal-template .item-title {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.minimal-template .item-subtitle {
+  color: #64748b;
+}
+
+.minimal-template .item-date {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.minimal-template .skills-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.minimal-template .skill-item {
+  background: #f1f5f9;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  color: #475569;
+} 

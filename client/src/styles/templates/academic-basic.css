@@ -1,0 +1,136 @@
+.academic-basic {
+  @apply p-8;
+  font-family: 'Times New Roman', 'Georgia', serif;
+  color: #2C3338;
+  line-height: 1.8;
+  background-color: #FFFFFF;
+}
+
+.academic-basic .header {
+  @apply text-center mb-12;
+  border-bottom: 3px double #2C3338;
+}
+
+.academic-basic .name {
+  @apply text-4xl font-bold mb-3;
+  font-family: 'Times New Roman', 'Georgia', serif;
+  color: #8B0000;
+  letter-spacing: 0.05em;
+}
+
+.academic-basic .title {
+  @apply text-xl mb-6 font-medium;
+  color: #4A4F55;
+}
+
+.academic-basic .contact-info {
+  @apply flex justify-center flex-wrap gap-8 text-base pb-8;
+  font-family: 'Times New Roman', 'Georgia', serif;
+}
+
+.academic-basic .contact-item {
+  @apply flex items-center gap-3;
+  color: #4A4F55;
+}
+
+.academic-basic .section {
+  @apply mb-10;
+}
+
+.academic-basic .section-title {
+  @apply text-2xl mb-6 font-bold;
+  font-family: 'Playfair Display', serif;
+  color: #8B0000;
+  border-bottom: 1px solid #8B0000;
+  padding-bottom: 0.5rem;
+}
+
+.academic-basic .experience-item,
+.academic-basic .education-item,
+.academic-basic .project-item {
+  @apply mb-8 last:mb-0;
+}
+
+.academic-basic .item-header {
+  @apply mb-3;
+}
+
+.academic-basic .item-title {
+  @apply text-xl font-semibold;
+  color: #2C3338;
+}
+
+.academic-basic .item-subtitle {
+  @apply text-lg;
+  color: #4A4F55;
+}
+
+.academic-basic .item-location {
+  @apply text-base italic;
+  color: #4A4F55;
+}
+
+.academic-basic .item-duration {
+  @apply text-base;
+  color: #8B0000;
+}
+
+.academic-basic .item-description {
+  @apply text-base leading-relaxed;
+  color: #2C3338;
+}
+
+.academic-basic .skills-list {
+  @apply grid grid-cols-2 gap-4;
+}
+
+.academic-basic .skill-category {
+  @apply mb-6;
+}
+
+.academic-basic .skill-category-title {
+  @apply text-lg font-semibold mb-3;
+  color: #8B0000;
+}
+
+.academic-basic .skill-item {
+  @apply text-base;
+  color: #2C3338;
+}
+
+.academic-basic .certification-item {
+  @apply mb-6 last:mb-0;
+}
+
+.academic-basic .certification-title {
+  @apply text-lg font-semibold;
+  color: #8B0000;
+}
+
+.academic-basic .certification-issuer {
+  @apply text-base italic;
+  color: #4A4F55;
+}
+
+.academic-basic .certification-date {
+  @apply text-base;
+  color: #4A4F55;
+}
+
+@media print {
+  .academic-basic {
+    @apply p-0;
+  }
+
+  .academic-basic .header {
+    @apply mb-8;
+  }
+
+  .academic-basic .section {
+    @apply mb-8;
+  }
+
+  .academic-basic .section-title {
+    @apply mb-4;
+  }
+} 

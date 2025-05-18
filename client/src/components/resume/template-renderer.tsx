@@ -1,5 +1,5 @@
 import React from 'react';
-import { TemplateDefinition } from '@/lib/templates';
+import { TemplateDefinition } from '@/lib/templates/index';
 import { Resume } from '@shared/schema';
 import styled from '@emotion/styled';
 import { css } from '@emotion/react';
@@ -7,7 +7,7 @@ import { css } from '@emotion/react';
 interface TemplateRendererProps {
   template: TemplateDefinition;
   resume: Resume;
-  scale?: number;
+  isPrintMode?: boolean;
 }
 
 interface StyledComponentProps {
@@ -26,12 +26,42 @@ const ResumeContainer = styled.div<StyledComponentProps>`
     line-height: ${styles.lineHeight};
     color: ${styles.colors.text};
     background: ${styles.colors.background};
-    width: 8.5in;
-    height: 11in;
-    padding: 0.5in;
+    width: 794px; /* 210mm */
+    min-height: 1123px; /* 297mm */
+    height: auto;
+    padding: 40px 32px;
     box-sizing: border-box;
     position: relative;
-    overflow: hidden;
+    margin: 0 auto;
+
+    &:not(.print-mode) {
+      box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    }
+
+    @media print {
+      width: 210mm;
+      height: 297mm;
+      padding: 20mm 15mm;
+      margin: 0;
+      box-shadow: none;
+      border: none;
+      border-radius: 0;
+      background-color: white;
+
+      /* Hide all preview elements */
+      .preview-container,
+      .preview-wrapper,
+      h3:not([class*="resume-section"]),
+      .border {
+        display: none !important;
+      }
+
+      /* Reset any print margins and ensure clean output */
+      @page {
+        margin: 0;
+        size: A4;
+      }
+    }
   `}
 `;
 
@@ -48,17 +78,20 @@ const ResumeGrid = styled.div<StyledComponentProps>`
 
 const Section = styled.section<StyledComponentProps>`
   ${({ gridArea, sectionStyles, styles }) => css`
-    grid-area: ${gridArea};
-    padding: ${styles.spacing.section};
-    background: ${sectionStyles?.colors?.background || styles.colors.background};
-    color: ${sectionStyles?.colors?.text || styles.colors.text};
+    margin-bottom: 1.25rem;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
 
     h2 {
       color: ${sectionStyles?.colors?.primary || styles.colors.primary};
-      font-size: 1.25em;
-      margin-bottom: 1rem;
-      border-bottom: 2px solid ${sectionStyles?.colors?.accent || styles.colors.accent};
-      padding-bottom: 0.5rem;
+      font-size: 1.125rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid ${sectionStyles?.colors?.accent || styles.colors.accent};
+      padding-bottom: 0.25rem;
+      text-transform: uppercase;
     }
 
     h3 {
@@ -118,8 +151,11 @@ interface ResumeContent {
   projects?: ProjectItem[];
 }
 
+// Define the section type explicitly
+type TemplateSectionType = NonNullable<TemplateDefinition['layout']>['sections'][0];
+
 const renderSection = (
-  section: TemplateDefinition['layout']['sections'][0],
+  section: TemplateSectionType,
   content: ResumeContent,
   baseStyles: TemplateDefinition['styles']
 ) => {
@@ -133,76 +169,80 @@ const renderSection = (
       styles={baseStyles}
     >
       {section.type === 'header' && content.personalInfo && (
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">{content.personalInfo.name}</h1>
-          <div className="flex justify-center gap-4 text-sm">
-            {content.personalInfo.email && <span>{content.personalInfo.email}</span>}
-            {content.personalInfo.phone && <span>{content.personalInfo.phone}</span>}
+        <div className="text-center mb-6"> {/* Reduced top margin */}
+          <h1 className="text-2xl font-bold mb-1">{content.personalInfo.name}</h1>
+          <div className="flex justify-center items-center gap-2 text-sm"> {/* Reduced gap */}
             {content.personalInfo.location && <span>{content.personalInfo.location}</span>}
+            {content.personalInfo.email && <span>•</span>}
+            {content.personalInfo.email && <span>{content.personalInfo.email}</span>}
+            {content.personalInfo.phone && <span>•</span>}
+            {content.personalInfo.phone && <span>{content.personalInfo.phone}</span>}
+            {content.personalInfo.website && <span>•</span>}
+            {content.personalInfo.website && <span>{content.personalInfo.website}</span>}
           </div>
-          {content.personalInfo.website && (
-            <div className="mt-1 text-sm">{content.personalInfo.website}</div>
-          )}
         </div>
       )}
 
       {section.type === 'summary' && content.personalInfo?.summary && (
-        <div>
-          <h2>Professional Summary</h2>
-          <p>{content.personalInfo.summary}</p>
+        <div className="mb-5"> {/* Adjusted spacing */}
+          <h2 className="text-[14px] font-bold uppercase mb-2">Professional Summary</h2>
+          <p className="text-sm leading-relaxed">{content.personalInfo.summary}</p>
         </div>
       )}
 
       {section.type === 'experience' && content.experience && (
-        <div>
-          <h2>Experience</h2>
+        <div className="mb-5"> {/* Adjusted spacing */}
+          <h2 className="text-[14px] font-bold uppercase mb-2">Professional Experience</h2>
           {content.experience?.map((exp: ExperienceItem, i: number) => (
-            <div key={i} className="mb-4">
-              <h3>{exp.position}</h3>
-              <div className="flex justify-between text-sm">
-                <span>{exp.company}</span>
-                <span>{exp.startDate} - {exp.endDate || 'Present'}</span>
+            <div key={i} className="mb-3"> {/* Reduced spacing between items */}
+              <div className="flex justify-between items-start mb-0.5">
+                <div>
+                  <h3 className="font-bold text-sm">{exp.position}</h3>
+                  <div className="text-sm">
+                    <span className="font-medium">{exp.company}</span>
+                    {exp.location && <span className="ml-1">{exp.location}</span>}
+                  </div>
+                </div>
+                <div className="text-sm text-right">
+                  {exp.startDate} — {exp.endDate || 'Present'}
+                </div>
               </div>
-              {exp.location && (
-                <div className="text-sm text-gray-600">{exp.location}</div>
-              )}
-              <p className="mt-2 text-sm">{exp.description}</p>
+              <p className="text-sm mt-1 whitespace-pre-line">{exp.description}</p>
             </div>
           ))}
         </div>
       )}
 
       {section.type === 'education' && content.education && (
-        <div>
-          <h2>Education</h2>
-          {content.education?.map((edu: NonNullable<ResumeContent['education']>[number], i: number) => (
-            <div key={i} className="mb-4">
-              <h3>{edu.degree}</h3>
-              <div className="flex justify-between text-sm">
-                <span>{edu.institution}</span>
-                <span>{edu.startDate} - {edu.endDate || 'Present'}</span>
+        <div className="mb-5"> {/* Adjusted spacing */}
+          <h2 className="text-[14px] font-bold uppercase mb-2">Education</h2>
+          {content.education?.map((edu: EducationItem, i: number) => (
+            <div key={i} className="mb-2"> {/* Reduced spacing between items */}
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-bold text-sm">{edu.degree}</h3>
+                  <div className="text-sm">
+                    <span className="font-medium">{edu.institution}</span>
+                    {edu.location && <span className="ml-1">{edu.location}</span>}
+                  </div>
+                </div>
+                <div className="text-sm text-right">
+                  {edu.startDate} — {edu.endDate || 'Present'}
+                </div>
               </div>
-              {edu.location && (
-                <div className="text-sm text-gray-600">{edu.location}</div>
-              )}
-              {edu.description && (
-                <p className="mt-2 text-sm">{edu.description}</p>
-              )}
             </div>
           ))}
         </div>
       )}
 
-      {section.type === 'skills' && content.skills && (
-        <div>
-          <h2>Skills</h2>
-          <div className="flex flex-wrap gap-2">
-            {content.skills?.map((skill: string, i: number) => (
-              <span
-                key={i}
-                className="px-2 py-1 bg-gray-100 rounded text-sm"
-              >
+      {section.type === 'skills' && content.skills && content.skills.length > 0 && (
+        <div className="mb-5"> {/* Adjusted spacing */}
+          <h2 className="text-[14px] font-bold uppercase mb-2">Expert-Level Skills</h2>
+          <div className="text-sm">
+            {content.skills.filter(Boolean).map((skill, i, arr) => (
+              <span key={i}>
                 {skill}
+                {i < arr.length - 1 && ', '}
               </span>
             ))}
           </div>
@@ -210,42 +250,84 @@ const renderSection = (
       )}
 
       {section.type === 'certifications' && content.certifications && (
-        <div>
-          <h2>Certifications</h2>
+        <div className="mb-5"> {/* Adjusted spacing */}
+          <h2 className="text-[14px] font-bold uppercase mb-2">Certifications</h2>
           {content.certifications.map((cert, i) => (
-            <div key={i} className="mb-3">
-              <h3>{cert.name}</h3>
-              <div className="flex justify-between text-sm">
-                <span>{cert.issuer}</span>
-                {cert.date && <span>{cert.date}</span>}
+            <div key={i} className="mb-2"> {/* Reduced spacing between items */}
+              <div className="flex justify-between items-start">
+                <h3 className="font-bold text-sm">{cert.name}</h3>
+                {cert.date && <span className="text-sm">{cert.date}</span>}
               </div>
+              {cert.issuer && <div className="text-sm">{cert.issuer}</div>}
+              {cert.description && (
+                <p className="text-sm mt-1">{cert.description}</p>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {section.type === 'projects' && content.projects && (
-        <div>
-          <h2>Projects</h2>
+        <div className="mb-5"> {/* Adjusted spacing */}
+          <h2 className="text-[14px] font-bold uppercase mb-2">Projects</h2>
           {content.projects?.map((project: ProjectItem, i: number) => (
-            <div key={i} className="mb-4">
-              <h3>{project.name}</h3>
-              <p className="mt-1 text-sm">{project.description}</p>
-              {project.url && (
-                <a
-                  href={project.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  View Project
-                </a>
+            <div key={i} className="mb-3"> {/* Reduced spacing between items */}
+              <div className="flex justify-between items-start">
+                <h3 className="font-bold text-sm">{project.name}</h3>
+                {project.url && (
+                  <a
+                    href={project.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    View Project
+                  </a>
+                )}
+              </div>
+              <p className="text-sm mt-1">{project.description}</p>
+              {project.technologies && project.technologies.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {project.technologies.map((tech, techIndex) => (
+                    <span
+                      key={techIndex}
+                      className="text-xs px-1.5 py-0.5 bg-gray-100 rounded"
+                    >
+                      {tech}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           ))}
         </div>
       )}
     </Section>
+  );
+};
+
+interface ResumeSectionProps {
+  section: {
+    id: string;
+    type: "header" | "summary" | "experience" | "education" | "skills" | "certifications" | "projects";
+    gridArea?: string;
+    styles?: Partial<TemplateDefinition['styles']>;
+  };
+  content: ResumeContent;
+  styles: TemplateDefinition['styles'];
+}
+
+const ResumeSection: React.FC<ResumeSectionProps> = ({ section, content, styles }) => {
+  const sectionStyles = {
+    ...styles,
+    ...(section.styles || {}),
+    gridArea: section.gridArea,
+  };
+
+  return (
+    <div style={{ gridArea: section.gridArea }}>
+      {renderSection(section, content, sectionStyles)}
+    </div>
   );
 };
 
@@ -275,36 +357,47 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
-export const TemplateRenderer: React.FC<TemplateRendererProps> = ({
-  template,
-  resume,
-  scale = 1
-}) => {
-  if (!template || !resume) {
+export const TemplateRenderer: React.FC<TemplateRendererProps> = ({ template, resume, isPrintMode = false }) => {
+  const content = resume.content as ResumeContent;
+  
+  if (!template.layout) {
     return (
       <div className="p-4 border border-yellow-200 rounded bg-yellow-50">
-        <p className="text-yellow-800">Loading template...</p>
+        <p className="text-yellow-800">Template layout not found</p>
       </div>
     );
   }
 
-  const content = resume.content as ResumeContent;
-  
+  const { sections } = template.layout;
+
+  // Core resume content
+  const resumeContent = (
+    <ResumeContainer 
+      styles={template.styles} 
+      className={`resume-content ${isPrintMode ? 'print-mode' : ''}`}
+      data-printmode={isPrintMode}
+    >
+      {sections.map((section) => (
+        <ResumeSection
+          key={section.id}
+          section={section}
+          content={content}
+          styles={template.styles}
+        />
+      ))}
+    </ResumeContainer>
+  );
+
+  // For PDF generation/print, return only the content
+  if (isPrintMode) {
+    return resumeContent;
+  }
+
+  // For preview mode
   return (
     <ErrorBoundary>
-      <div
-        style={{
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left',
-        }}
-      >
-        <ResumeContainer styles={template.styles}>
-          <ResumeGrid layout={template.layout} styles={template.styles}>
-            {template.layout.sections.map(section =>
-              renderSection(section, content, template.styles)
-            )}
-          </ResumeGrid>
-        </ResumeContainer>
+      <div className="preview-container print:hidden">
+        {resumeContent}
       </div>
     </ErrorBoundary>
   );

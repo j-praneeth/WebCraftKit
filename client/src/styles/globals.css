@@ -1,0 +1,50 @@
+@import 'katex/dist/katex.min.css';
+
+/* Import Template Styles */
+@import './templates/startup-modern.css';
+@import './templates/academic-basic.css';
+@import './templates/fresh-graduate.css';
+@import './templates/classic-clean.css';
+@import './templates/compact-modern.css';
+@import './templates/basic-professional.css';
+
+/* LaTeX Preview Styles */
+.latex-preview {
+  @apply bg-white p-4 rounded-lg;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.latex-preview .katex {
+  font-size: 1.1em;
+}
+
+.latex-preview .katex-display {
+  margin: 1em 0;
+}
+
+/* Template Card Hover Effects */
+.template-card {
+  @apply transition-all duration-200;
+}
+
+.template-card:hover {
+  @apply transform -translate-y-1 shadow-lg;
+}
+
+/* Modern Typography Styles */
+.template-title {
+  @apply font-semibold text-lg text-gray-900;
+}
+
+.template-description {
+  @apply text-sm text-gray-600 mt-2;
+}
+
+.section-title {
+  @apply text-2xl font-bold text-gray-900 mb-4;
+}
+
+.subsection-title {
+  @apply text-xl font-semibold text-gray-800 mb-3;
+} 

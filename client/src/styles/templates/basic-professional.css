@@ -1,0 +1,153 @@
+.basic-professional {
+  @apply p-6;
+  font-family: 'Garamond', 'Times New Roman', serif;
+  color: #2F3437;
+  line-height: 1.6;
+  background-color: #FFFFFF;
+}
+
+.basic-professional .header {
+  @apply mb-8 text-center;
+  border-bottom: 1px solid #D1D5DB;
+}
+
+.basic-professional .name {
+  @apply text-3xl font-bold mb-2;
+  color: #14181B;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.basic-professional .title {
+  @apply text-xl mb-4;
+  color: #4B5563;
+}
+
+.basic-professional .contact-info {
+  @apply flex justify-center flex-wrap gap-6 text-sm pb-6;
+  color: #4B5563;
+}
+
+.basic-professional .contact-item {
+  @apply flex items-center gap-2;
+}
+
+.basic-professional .contact-item svg {
+  @apply w-4 h-4;
+  color: #14181B;
+}
+
+.basic-professional .section {
+  @apply mb-8 last:mb-0;
+}
+
+.basic-professional .section-title {
+  @apply text-xl font-bold mb-4;
+  color: #14181B;
+  border-bottom: 1px solid #D1D5DB;
+  padding-bottom: 0.5rem;
+}
+
+.basic-professional .experience-item,
+.basic-professional .education-item {
+  @apply mb-6 last:mb-0;
+}
+
+.basic-professional .item-header {
+  @apply mb-2;
+}
+
+.basic-professional .item-title {
+  @apply text-lg font-bold;
+  color: #14181B;
+}
+
+.basic-professional .item-subtitle {
+  @apply text-base;
+  color: #4B5563;
+}
+
+.basic-professional .item-duration {
+  @apply text-sm;
+  color: #6B7280;
+  font-style: italic;
+}
+
+.basic-professional .item-description {
+  @apply text-base leading-relaxed;
+  color: #4B5563;
+}
+
+.basic-professional .skills-section {
+  @apply mb-6;
+}
+
+.basic-professional .skills-list {
+  @apply grid grid-cols-2 gap-4;
+}
+
+.basic-professional .skill-category {
+  @apply mb-4 last:mb-0;
+}
+
+.basic-professional .skill-category-title {
+  @apply text-base font-bold mb-2;
+  color: #14181B;
+}
+
+.basic-professional .skill-items {
+  @apply pl-4;
+  list-style-type: disc;
+}
+
+.basic-professional .skill-item {
+  @apply text-base;
+  color: #4B5563;
+}
+
+.basic-professional .certifications-list {
+  @apply space-y-4;
+}
+
+.basic-professional .certification-item {
+  @apply mb-4 last:mb-0;
+}
+
+.basic-professional .certification-title {
+  @apply text-base font-bold;
+  color: #14181B;
+}
+
+.basic-professional .certification-issuer {
+  @apply text-sm;
+  color: #6B7280;
+}
+
+.basic-professional .certification-date {
+  @apply text-sm;
+  color: #6B7280;
+  font-style: italic;
+}
+
+@media print {
+  .basic-professional {
+    @apply p-0;
+  }
+
+  .basic-professional .header {
+    @apply mb-6;
+  }
+
+  .basic-professional .section {
+    @apply mb-6;
+  }
+
+  .basic-professional .section-title {
+    @apply mb-3;
+  }
+
+  .basic-professional .experience-item,
+  .basic-professional .education-item {
+    @apply mb-4;
+  }
+} 

@@ -15,8 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { optimizeResume } from "@/lib/openai";
-import { templates, getTemplatesByPlan } from "@/lib/templates";
+import { templates, getTemplatesByPlan } from "@/lib/templates/index";
 import { TemplateRenderer } from "@/components/resume/template-renderer";
+import { createRoot } from "react-dom/client";
 
 interface ResumeContent {
   personalInfo?: {
@@ -63,6 +64,7 @@ interface ResumeData {
   title: string;
   content: ResumeContent;
   jobDescription?: string;
+  templateId?: string;
 }
 
 function ResumeEditor() {
@@ -87,7 +89,6 @@ function ResumeEditor() {
         location?: string;
         startDate: string;
         endDate?: string;
-        current?: boolean;
         description: string;
       }>;
       education?: Array<{
@@ -99,7 +100,7 @@ function ResumeEditor() {
         endDate?: string;
         description?: string;
       }>;
-      skills?: Array<string>;
+      skills?: string[];
       certifications?: Array<{
         name: string;
         issuer?: string;
@@ -112,18 +113,9 @@ function ResumeEditor() {
         url?: string;
         technologies?: string[];
       }>;
-      awards?: Array<{
-        title: string;
-        issuer?: string;
-        date?: string;
-        description?: string;
-      }>;
-      languages?: Array<{
-        language: string;
-        proficiency: string;
-      }>;
     };
     jobDescription?: string;
+    templateId?: string;
   }>({
     title: "",
     content: {
@@ -142,7 +134,6 @@ function ResumeEditor() {
           location: "",
           startDate: "",
           endDate: "",
-          current: false,
           description: "",
         },
       ],
@@ -176,6 +167,7 @@ function ResumeEditor() {
       ],
     },
     jobDescription: "",
+    templateId: "modern",
   });
   
   const [activeTab, setActiveTab] = useState("personal");
@@ -410,6 +402,7 @@ function ResumeEditor() {
           }]
         },
         jobDescription: "",
+        templateId: resume.templateId || undefined,
       });
     }
   }, [resume, isLoadingResume]);
@@ -543,8 +536,47 @@ function ResumeEditor() {
             onClick={async () => {
               try {
                 const { generatePDF } = await import('@/lib/pdf-generator');
-                await generatePDF('resume-preview', `${resumeData.title || 'resume'}.pdf`);
+                
+                // Create a temporary div for PDF generation
+                const tempDiv = document.createElement('div');
+                tempDiv.style.position = 'absolute';
+                tempDiv.style.left = '-9999px';
+                tempDiv.style.width = '794px'; // A4 width
+                tempDiv.style.height = '1123px'; // A4 height
+                document.body.appendChild(tempDiv);
+                
+                // Create a new root and render the template
+                const root = createRoot(tempDiv);
+                
+                // Wait for the render to complete
+                await new Promise<void>((resolve) => {
+                  root.render(
+                    <TemplateRenderer
+                      template={templates[resumeData.templateId as keyof typeof templates] || templates.modern}
+                      resume={resumeData as Resume}
+                      isPrintMode={true}
+                    />
+                  );
+                  // Give it a moment to render
+                  setTimeout(resolve, 500);
+                });
+
+                // Add a class to ensure proper print styling
+                tempDiv.classList.add('print-mode');
+                
+                // Generate PDF
+                await generatePDF(tempDiv, `${resumeData.title || 'resume'}.pdf`);
+                
+                // Cleanup after a short delay to ensure PDF generation is complete
+                setTimeout(() => {
+                  root.unmount();
+                  if (document.body.contains(tempDiv)) {
+                    document.body.removeChild(tempDiv);
+                  }
+                }, 1000);
+                
               } catch (error) {
+                console.error('PDF Generation Error:', error);
                 toast({
                   title: "Error",
                   description: "Failed to generate PDF. Please try again.",
@@ -568,24 +600,33 @@ function ResumeEditor() {
               {getTemplatesByPlan((user?.plan as 'free' | 'professional' | 'enterprise') || 'free').map((template) => (
                 <div
                   key={template.id}
-                  className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
-                    resume?.templateId === template.id
+                  onClick={() => {
+                    // Update the template ID in resumeData
+                    setResumeData(prev => ({
+                      ...prev,
+                      templateId: template.id as string
+                    }));
+                    
+                    // Save the change immediately
+                    updateResumeMutation.mutate({
+                      templateId: template.id
+                    });
+                    
+                    toast({
+                      title: "Template Updated",
+                      description: `Switched to ${template.name} template`,
+                    });
+                  }}
+                  className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all h-64 ${
+                    resumeData.templateId === template.id
                       ? 'border-primary-500 shadow-lg'
                       : 'border-gray-200 hover:border-primary-300'
                   }`}
-                  onClick={() => {
-                    if (resume?.templateId !== template.id) {
-                      updateResumeMutation.mutate({
-                        ...resumeData,
-                        templateId: template.id,
-                      });
-                    }
-                  }}
                 >
                   <img
                     src={template.previewImage}
                     alt={template.name}
-                    className="w-full aspect-[8.5/11] object-cover"
+                    className="w-full h-full object-cover"
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4">
                     <h4 className="text-white font-medium">{template.name}</h4>
@@ -603,37 +644,9 @@ function ResumeEditor() {
         </Card>
       </div>
 
-      {/* Resume Preview */}
-      <div id="resume-preview" className="mb-6">
-        <Card>
-          <CardContent className="p-6">
-            <h3 className="text-lg font-medium mb-4">Resume Preview</h3>
-            <div className="border rounded-lg overflow-hidden">
-              {/* Template Preview */}
-              <div className="relative">
-                {isLoadingResume ? (
-                  <div className="flex justify-center items-center h-[600px] bg-gray-50 rounded">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
-                  </div>
-                ) : resumeData ? (
-                  <TemplateRenderer
-                    template={templates[resume?.templateId as keyof typeof templates] || templates.modern}
-                    resume={resumeData as Resume}
-                    scale={0.7}
-                  />
-                ) : (
-                  <div className="flex justify-center items-center h-[600px] bg-gray-50 rounded">
-                    <p className="text-gray-500">No resume data available</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
+      {/* Editor Column and Optimizer Column */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Editor Column */}
         <div className="lg:col-span-2">
           <Card>
             <CardContent className="p-6">
@@ -1313,149 +1326,45 @@ function ResumeEditor() {
                 </div>
               )}
 
-              <Separator className="my-6" />
 
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Resume Preview</h3>
-                <p className="text-sm text-gray-500">
-                  A simplified preview of your resume content. The final layout will depend on the template you selected.
-                </p>
-
-                <div className="bg-gray-50 p-4 rounded-md max-h-[500px] overflow-y-auto">
-                  {/* Personal Info */}
-                  <div className="text-center mb-4">
-                    <h2 className="text-xl font-bold">
-                      {resumeData.content.personalInfo?.name || "Your Name"}
-                    </h2>
-                    <div className="flex flex-wrap justify-center gap-2 text-sm">
-                      {resumeData.content.personalInfo?.email && (
-                        <span>{resumeData.content.personalInfo.email}</span>
-                      )}
-                      {resumeData.content.personalInfo?.phone && (
-                        <span>• {resumeData.content.personalInfo.phone}</span>
-                      )}
-                      {resumeData.content.personalInfo?.location && (
-                        <span>• {resumeData.content.personalInfo.location}</span>
-                      )}
-                    </div>
-                    {resumeData.content.personalInfo?.website && (
-                      <div className="text-sm mt-1">
-                        <span>{resumeData.content.personalInfo.website}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Summary */}
-                  {resumeData.content.personalInfo?.summary && (
-                    <div className="mb-4">
-                      <h3 className="text-md font-semibold border-b mb-2">Professional Summary</h3>
-                      <p className="text-sm">{resumeData.content.personalInfo.summary}</p>
-                    </div>
-                  )}
-
-                  {/* Experience */}
-                  {resumeData.content.experience && resumeData.content.experience.length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-md font-semibold border-b mb-2">Experience</h3>
-                      {resumeData.content.experience.map((exp, i) => (
-                        <div key={i} className="mb-3">
-                          <div className="flex justify-between">
-                            <span className="font-medium">{exp.position}</span>
-                            <span className="text-sm">
-                              {exp.startDate} - {exp.endDate || "Present"}
-                            </span>
-                          </div>
-                          <div className="text-sm">{exp.company}{exp.location ? `, ${exp.location}` : ''}</div>
-                          <p className="text-sm mt-1">{exp.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Education */}
-                  {resumeData.content.education && resumeData.content.education.length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-md font-semibold border-b mb-2">Education</h3>
-                      {resumeData.content.education.map((edu, i) => (
-                        <div key={i} className="mb-3">
-                          <div className="flex justify-between">
-                            <span className="font-medium">{edu.institution}</span>
-                            <span className="text-sm">
-                              {edu.startDate} - {edu.endDate || "Present"}
-                            </span>
-                          </div>
-                          <div className="text-sm">
-                            {edu.degree}{edu.field ? ` in ${edu.field}` : ''}
-                            {edu.location ? `, ${edu.location}` : ''}
-                          </div>
-                          {edu.description && (
-                            <p className="text-sm mt-1">{edu.description}</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Skills */}
-                  {resumeData.content.skills && resumeData.content.skills.length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-md font-semibold border-b mb-2">Skills</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {resumeData.content.skills.filter(Boolean).map((skill, i) => (
-                          <span key={i} className="text-sm bg-gray-100 px-2 py-1 rounded">
-                            {skill}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Certifications */}
-                  {resumeData.content.certifications && resumeData.content.certifications.length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-md font-semibold border-b mb-2">Certifications</h3>
-                      {resumeData.content.certifications.map((cert, i) => (
-                        <div key={i} className="mb-2">
-                          <div className="flex justify-between">
-                            <span className="font-medium">{cert.name}</span>
-                            {cert.date && <span className="text-sm">{cert.date}</span>}
-                          </div>
-                          {cert.issuer && <div className="text-sm">{cert.issuer}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Projects */}
-                  {resumeData.content.projects && resumeData.content.projects.length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-md font-semibold border-b mb-2">Projects</h3>
-                      {resumeData.content.projects.map((project, i) => (
-                        <div key={i} className="mb-3">
-                          <div className="flex justify-between">
-                            <span className="font-medium">{project.name}</span>
-                            {project.url && (
-                              <a 
-                                href={project.url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-sm text-primary-600"
-                              >
-                                Link
-                              </a>
-                            )}
-                          </div>
-                          <p className="text-sm mt-1">{project.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
             </CardContent>
           </Card>
-        </div>
+                    </div>
+                  </div>
+
+      {/* Resume Preview */}
+      <div id="resume-preview" className="mb-6 mt-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="print:hidden">
+              <h3 className="text-lg font-medium mb-4">Resume Preview</h3>
+            </div>
+            <div className="border rounded-lg overflow-hidden print:border-0">
+              <div className="relative">
+                {isLoadingResume ? (
+                  <div className="flex justify-center items-center h-[600px] bg-gray-50 rounded">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+                  </div>
+                ) : resumeData ? (
+                  <div key={`template-${resumeData.templateId || 'modern'}-${Date.now()}`}>
+                    <TemplateRenderer
+                      template={templates[resumeData.templateId as keyof typeof templates] || templates.modern}
+                      resume={resumeData as Resume}
+                      isPrintMode={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex justify-center items-center h-[600px] bg-gray-50 rounded">
+                    <p className="text-gray-500">No resume data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+        
     </DashboardLayout>
   );
 }

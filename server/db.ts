@@ -123,6 +123,19 @@ const resumeTemplateSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+const jobApplicationSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.Mixed, ref: 'User', required: true },
+  jobPostingId: { type: mongoose.Schema.Types.Mixed, ref: 'JobPosting', required: true },
+  status: { 
+    type: String, 
+    enum: ['applied', 'interviewing', 'offered', 'rejected', 'accepted', 'declined'],
+    default: 'applied'
+  },
+  appliedDate: { type: Date, default: Date.now },
+  lastUpdated: { type: Date, default: Date.now },
+  notes: { type: String }
+});
+
 // Register models
 export const User = mongoose.model('User', userSchema);
 export const Resume = mongoose.model('Resume', resumeSchema);
@@ -133,6 +146,7 @@ export const JobPosting = mongoose.model('JobPosting', jobPostingSchema);
 export const Organization = mongoose.model('Organization', organizationSchema);
 export const PricingPlan = mongoose.model('PricingPlan', pricingPlanSchema);
 export const ResumeTemplate = mongoose.model('ResumeTemplate', resumeTemplateSchema);
+export const JobApplication = mongoose.model('JobApplication', jobApplicationSchema);
 
 // Initialize pricing plans
 async function initializePricingPlans() {
@@ -348,5 +362,6 @@ export default {
   JobPosting,
   Organization,
   PricingPlan,
-  ResumeTemplate
+  ResumeTemplate,
+  JobApplication
 };

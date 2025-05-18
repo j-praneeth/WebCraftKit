@@ -7,7 +7,8 @@ import {
   JobPosting as JobPostingModel,
   Organization as OrganizationModel,
   PricingPlan as PricingPlanModel,
-  ResumeTemplate as ResumeTemplateModel
+  ResumeTemplate as ResumeTemplateModel,
+  JobApplication as JobApplicationModel
 } from './db';
 
 import { 
@@ -35,24 +36,90 @@ import { IStorage } from './storage';
 import mongoose from 'mongoose';
 
 export class MongoStorage implements IStorage {
-  getJobApplication(id: string | number): Promise<JobApplication | undefined> {
-    throw new Error('Method not implemented.');
+  async getJobApplication(id: string | number): Promise<JobApplication | undefined> {
+    try {
+      const application = await JobApplicationModel.findById(String(id));
+      if (!application) return undefined;
+      return this.convertMongoJobApplicationToSchemaJobApplication(application);
+    } catch (error) {
+      console.error('Error getting job application:', error);
+      return undefined;
+    }
   }
-  getJobApplicationsByUserId(userId: string | number): Promise<JobApplication[]> {
-    throw new Error('Method not implemented.');
+
+  async getJobApplicationsByUserId(userId: string | number): Promise<JobApplication[]> {
+    try {
+      const applications = await JobApplicationModel.find({ userId: String(userId) });
+      return applications.map(app => this.convertMongoJobApplicationToSchemaJobApplication(app));
+    } catch (error) {
+      console.error('Error getting job applications by user ID:', error);
+      return [];
+    }
   }
-  getJobApplicationsByJobId(jobId: string | number): Promise<JobApplication[]> {
-    throw new Error('Method not implemented.');
+
+  async getJobApplicationsByJobId(jobId: string | number): Promise<JobApplication[]> {
+    try {
+      const applications = await JobApplicationModel.find({ jobPostingId: String(jobId) });
+      return applications.map(app => this.convertMongoJobApplicationToSchemaJobApplication(app));
+    } catch (error) {
+      console.error('Error getting job applications by job ID:', error);
+      return [];
+    }
   }
-  createJobApplication(application: InsertJobApplication): Promise<JobApplication> {
-    throw new Error('Method not implemented.');
+
+  async createJobApplication(application: InsertJobApplication): Promise<JobApplication> {
+    try {
+      const newApplication = new JobApplicationModel({
+        ...application,
+        appliedDate: new Date(),
+        lastUpdated: new Date()
+      });
+      const savedApplication = await newApplication.save();
+      return this.convertMongoJobApplicationToSchemaJobApplication(savedApplication);
+    } catch (error) {
+      console.error('Error creating job application:', error);
+      throw new Error('Failed to create job application');
+    }
   }
-  updateJobApplication(id: string | number, data: Partial<JobApplication>): Promise<JobApplication | undefined> {
-    throw new Error('Method not implemented.');
+
+  async updateJobApplication(id: string | number, data: Partial<JobApplication>): Promise<JobApplication | undefined> {
+    try {
+      const application = await JobApplicationModel.findByIdAndUpdate(
+        String(id),
+        { ...data, lastUpdated: new Date() },
+        { new: true }
+      );
+      if (!application) return undefined;
+      return this.convertMongoJobApplicationToSchemaJobApplication(application);
+    } catch (error) {
+      console.error('Error updating job application:', error);
+      return undefined;
+    }
   }
-  deleteJobApplication(id: string | number): Promise<boolean> {
-    throw new Error('Method not implemented.');
+
+  async deleteJobApplication(id: string | number): Promise<boolean> {
+    try {
+      const result = await JobApplicationModel.findByIdAndDelete(String(id));
+      return !!result;
+    } catch (error) {
+      console.error('Error deleting job application:', error);
+      return false;
+    }
   }
+
+  // Add the converter method
+  private convertMongoJobApplicationToSchemaJobApplication(application: any): JobApplication {
+    return {
+      id: application._id.toString(),
+      userId: application.userId.toString(),
+      jobPostingId: application.jobPostingId.toString(),
+      status: application.status,
+      appliedDate: application.appliedDate,
+      lastUpdated: application.lastUpdated,
+      notes: application.notes
+    };
+  }
+
   getUserByProvider(provider: string, providerId: string): Promise<User | undefined> {
     throw new Error('Method not implemented.');
   }

@@ -17,6 +17,7 @@ function MockInterviews() {
   const { toast } = useToast();
   const [selectedJobRole, setSelectedJobRole] = useState("Software Engineer");
   const [showInterviewSim, setShowInterviewSim] = useState(false);
+  const [showAllInterviews, setShowAllInterviews] = useState(false);
 
   // Fetch mock interviews
   const { 
@@ -127,6 +128,12 @@ function MockInterviews() {
       });
     }
   };
+
+  // Get the interviews to display based on showAllInterviews state
+  const displayedInterviews = interviews?.filter(interview => interview.score !== null);
+  const limitedInterviews = showAllInterviews 
+    ? displayedInterviews 
+    : displayedInterviews?.slice(0, 3);
 
   return (
     <DashboardLayout>
@@ -270,6 +277,15 @@ function MockInterviews() {
                   // This is just UI for now
                 }}
               />
+              {displayedInterviews && displayedInterviews.length > 3 && (
+                <Button 
+                  variant="link" 
+                  onClick={() => setShowAllInterviews(!showAllInterviews)}
+                  className="text-primary-600 hover:text-primary-700"
+                >
+                  {showAllInterviews ? "Minimize All" : `View All (${displayedInterviews.length})`}
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -279,12 +295,10 @@ function MockInterviews() {
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
               <p className="text-gray-500">Loading your interview history...</p>
             </div>
-          ) : interviews?.filter(interview => interview.score !== null)?.length ? (
+          ) : limitedInterviews?.length ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {interviews
-                  .filter(interview => interview.score !== null) // Only show completed interviews
-                  .map((interview) => {
+                {limitedInterviews.map((interview) => {
                   // Extract job role from title or feedback
                   const jobRole = interview.title?.split("position")[0]?.trim() || 
                                  (typeof interview.feedback === 'object' && interview.feedback ? 
@@ -375,12 +389,6 @@ function MockInterviews() {
                   );
                 })}
               </div>
-              
-              {interviews.length > 6 && (
-                <div className="flex justify-center mt-4">
-                  <Button variant="outline">Load More Interviews</Button>
-                </div>
-              )}
             </div>
           ) : (
             <div className="text-center py-16 bg-gray-50 rounded-lg border border-dashed border-gray-300">

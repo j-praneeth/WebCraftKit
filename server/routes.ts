@@ -12,13 +12,14 @@ import MemoryStore from "memorystore";
 import { genAI, MODEL_CONFIG, handleApiError } from './config/ai-config';
 import { WebSocketServer, WebSocket } from 'ws';
 import { sendInterviewFeedback, sendInterviewQuestions } from "./email";
-import { type User } from "@shared/schema";
+import { type User, JobPosting } from "@shared/schema";
 // import interviewQuestionsRouter from './api/interview-questions';
 import interviewQuestionsRouter from './api/gemini-questions';
 import type { GenerateContentResult } from '@google/generative-ai';
 import { HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import mongoose from 'mongoose';
 import type { RequestInit } from 'node-fetch';
+import { externalJobService } from './services/external-jobs';
 
 interface ExtendedRequestInit extends RequestInit {
   timeout?: number;
@@ -1025,9 +1026,263 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
 
   // Job posting routes
   app.get("/api/jobs", async (req, res) => {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
-    const jobs = await storage.getJobPostings(limit);
-    res.json(jobs);
+    try {
+      const { search, location, sort, includeExternal = 'true' } = req.query;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      
+      // Get internal jobs from database
+      const internalJobs = await storage.getJobPostings(limit);
+
+      // Get external jobs if requested
+      let externalJobs: JobPosting[] = [];
+      if (includeExternal === 'true') {
+        externalJobs = await externalJobService.searchAllJobs({
+          query: search as string,
+          location: location as string,
+          limit
+        });
+      }
+
+      // Combine internal and external jobs
+      let allJobs = [...internalJobs, ...externalJobs];
+
+      // Add some sample jobs if none exist (for testing)
+      if (allJobs.length === 0) {
+        const sampleJobs = [
+          {
+            id: 1,
+            title: "Senior Software Engineer",
+            company: "TechCorp",
+            location: "San Francisco, CA",
+            salary: "$150,000 - $200,000",
+            description: "Looking for an experienced software engineer...",
+            requirements: ["5+ years experience", "React", "Node.js"],
+            postDate: new Date(),
+            matchScore: 85,
+            source: 'Internal'
+          },
+          {
+            id: 2,
+            title: "Frontend Developer",
+            company: "WebCraft Solutions",
+            location: "Remote",
+            salary: "$100,000 - $130,000",
+            description: "Join our remote team building modern web applications...",
+            requirements: ["3+ years experience", "React", "TypeScript"],
+            postDate: new Date(),
+            matchScore: 92,
+            source: 'Internal'
+          }
+        ];
+        
+        return res.json(sampleJobs);
+      }
+
+      // Filter jobs based on search and location
+      if (search) {
+        const searchLower = (search as string).toLowerCase();
+        allJobs = allJobs.filter(job => 
+          job.title.toLowerCase().includes(searchLower) ||
+          job.company.toLowerCase().includes(searchLower) ||
+          job.description?.toLowerCase().includes(searchLower)
+        );
+      }
+      
+      if (location) {
+        const locationLower = (location as string).toLowerCase();
+        allJobs = allJobs.filter(job => 
+          job.location?.toLowerCase().includes(locationLower)
+        );
+      }
+
+      // Sort jobs
+      if (sort) {
+        const sortOption = sort as string;
+        allJobs.sort((a, b) => {
+          switch (sortOption) {
+            case 'newest':
+              return new Date(b.postDate).getTime() - new Date(a.postDate).getTime();
+            case 'oldest':
+              return new Date(a.postDate).getTime() - new Date(b.postDate).getTime();
+            case 'matchScore':
+              return ((b.matchScore || 0) - (a.matchScore || 0));
+            case 'salary':
+              // Simple salary comparison (assuming salary is stored as a number)
+              const getSalaryNumber = (salary: string | null) => {
+                if (!salary) return 0;
+                const match = salary.match(/\d+/);
+                return match ? parseInt(match[0]) : 0;
+              };
+              return getSalaryNumber(b.salary) - getSalaryNumber(a.salary);
+            default:
+              return 0;
+          }
+        });
+      }
+
+      res.json(allJobs);
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      res.status(500).json({ error: 'Failed to fetch jobs' });
+    }
+  });
+
+  app.get('/api/job-applications', async (req, res) => {
+    try {
+      const userId = req.query.userId as string;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+      }
+
+      // Get applications from database
+      const applications = await storage.getJobApplicationsByUserId(userId);
+
+      // For each application, try to fetch the job details
+      const applicationsWithJobs = await Promise.all(applications.map(async (app) => {
+        let jobDetails = null;
+        
+        if (app.source === 'Internal') {
+          // For internal jobs, fetch from storage
+          jobDetails = await storage.getJobPosting(app.jobPostingId);
+        } else {
+          // For external jobs, construct a minimal job object
+          jobDetails = {
+            id: app.jobPostingId,
+            title: app.jobTitle || 'External Job',
+            company: app.company || 'External Company',
+            source: app.source,
+            url: app.jobUrl
+          };
+        }
+        
+        return {
+          ...app,
+          job: jobDetails || {
+            id: app.jobPostingId,
+            title: 'Job Posting',
+            company: 'Company',
+            source: app.source || 'Unknown'
+          }
+        };
+      }));
+
+      res.json(applicationsWithJobs);
+    } catch (error) {
+      console.error('Error fetching applications:', error);
+      res.status(500).json({ error: 'Failed to fetch applications' });
+    }
+  });
+
+  app.post('/api/job-applications', async (req, res) => {
+    try {
+      const { userId, jobId, status, source, jobTitle, company, jobUrl, location } = req.body;
+      
+      if (!userId || !jobId) {
+        return res.status(400).json({ error: 'User ID and Job ID are required' });
+      }
+
+      let jobDetails = null;
+      
+      // Validate that the job exists if it's an internal job
+      if (source === 'Internal') {
+        jobDetails = await storage.getJobPosting(jobId);
+        if (!jobDetails) {
+          return res.status(404).json({ error: 'Job posting not found' });
+        }
+      }
+
+      // Create application in database
+      const application = await storage.createJobApplication({
+        userId: userId.toString(),
+        jobPostingId: jobId.toString(),
+        status: status || 'applied',
+        source: source || 'Internal',
+        // For external jobs, store the job details
+        jobTitle: source === 'Internal' ? jobDetails?.title : jobTitle,
+        company: source === 'Internal' ? jobDetails?.company : company,
+        jobUrl: source === 'Internal' ? jobDetails?.url : jobUrl,
+        location: source === 'Internal' ? jobDetails?.location : location
+      });
+
+      // Return the application with job details
+      const applicationWithJob = {
+        ...application,
+        job: jobDetails || {
+          id: jobId,
+          title: jobTitle || 'External Job',
+          company: company || 'External Company',
+          source: source,
+          url: jobUrl
+        }
+      };
+
+      res.json(applicationWithJob);
+    } catch (error) {
+      console.error('Error creating application:', error);
+      res.status(500).json({ error: 'Failed to create application' });
+    }
+  });
+
+  app.patch('/api/job-applications/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, notes } = req.body;
+      
+      // Update application in database
+      const application = await storage.getJobApplication(id);
+      
+      if (!application) {
+        return res.status(404).json({ error: 'Application not found' });
+      }
+
+      // Only allow cancellation if status is 'applied'
+      if (status === 'cancelled' && application.status !== 'applied') {
+        return res.status(400).json({ 
+          error: 'Cannot cancel application - it is already in progress or completed' 
+        });
+      }
+
+      const updatedApplication = await storage.updateJobApplication(id, {
+        status: status || application.status,
+        notes: notes || application.notes,
+        lastUpdated: new Date()
+      });
+
+      res.json(updatedApplication);
+    } catch (error) {
+      console.error('Error updating application:', error);
+      res.status(500).json({ error: 'Failed to update application' });
+    }
+  });
+
+  // Add DELETE endpoint for cancelling applications
+  app.delete('/api/job-applications/:id', async (req, res) => {
+    try {
+      const applicationId = req.params.id;
+      
+      // Get the application to verify it exists and check its status
+      const application = await storage.getJobApplication(applicationId);
+      
+      if (!application) {
+        return res.status(404).json({ error: 'Application not found' });
+      }
+      
+      // Only allow cancellation if status is 'applied'
+      if (application.status !== 'applied') {
+        return res.status(400).json({ 
+          error: 'Cannot cancel application - it is already in progress or completed' 
+        });
+      }
+      
+      // Delete the application
+      await storage.deleteJobApplication(applicationId);
+      
+      res.status(200).json({ message: 'Application cancelled successfully' });
+    } catch (err) {
+      console.error('Error cancelling application:', err);
+      res.status(500).json({ error: 'Failed to cancel application' });
+    }
   });
 
   // Gemini AI integration routes
@@ -1106,7 +1361,7 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
       
       // Store the ATS score and jobMatchScore in the user's profile
       try {
-        await storage.updateUser(Number((req.user as User).id), {
+        await storage.updateUser(Number(userId), {
           atsScore: finalScore
         });
       } catch (updateError) {
