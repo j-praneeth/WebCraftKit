@@ -8,6 +8,8 @@ import { analyzeMockInterview } from '@/lib/openai';
 import { FiMic, FiMicOff, FiVideo, FiVideoOff, FiPhoneOff, FiVolume2, FiVolumeX } from 'react-icons/fi';
 import { FacialExpressionAnalyzer } from './FacialExpressionAnalyzer';
 import { EmotionDisplay } from './EmotionDisplay';
+import { MediaPipeFaceAnalyzer, FaceAnalysisMetrics } from './MediaPipeFaceAnalyzer';
+import { FaceAnalysisIndicators } from './FaceAnalysisIndicators';
 
 // Speech synthesis utility class
 class SpeechService {
