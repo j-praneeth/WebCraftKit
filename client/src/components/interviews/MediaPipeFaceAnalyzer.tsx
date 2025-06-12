@@ -239,13 +239,8 @@ export function MediaPipeFaceAnalyzer({
             const metrics = analyzeFacialMetrics(landmarks);
             onAnalysis(metrics);
 
-            // Draw landmarks (optional, for debugging)
-            if (process.env.NODE_ENV === 'development') {
-              drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, { color: '#C0C0C070', lineWidth: 1 });
-              drawConnectors(ctx, landmarks, FACEMESH_RIGHT_EYE, { color: '#FF3030' });
-              drawConnectors(ctx, landmarks, FACEMESH_LEFT_EYE, { color: '#30FF30' });
-              drawConnectors(ctx, landmarks, FACEMESH_LIPS, { color: '#E0E0E0' });
-            }
+            // Optional: Draw landmarks for debugging (disabled in production)
+            // Drawing is commented out to focus on analysis metrics
           }
         });
 

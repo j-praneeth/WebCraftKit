@@ -470,6 +470,7 @@ export function VideoInterviewSimulator({
       setIsCameraOn(true);
       setFaceDetected(true);
       setIsRecording(true); // Automatically enable microphone
+      setFaceAnalysisActive(true); // Enable face analysis when camera starts
       
       toast({
         title: "Camera and microphone connected",
@@ -665,6 +666,11 @@ export function VideoInterviewSimulator({
   const [showEmotions, setShowEmotions] = useState<boolean>(true);
   const [emotionHistory, setEmotionHistory] = useState<{ timestamp: number; neutral: number; happy: number; sad: number; angry: number; fearful: number; surprised: number; disgusted: number }[]>([]);
 
+  // Add MediaPipe face analysis state
+  const [faceAnalysisMetrics, setFaceAnalysisMetrics] = useState<FaceAnalysisMetrics | null>(null);
+  const [showFaceAnalysis, setShowFaceAnalysis] = useState<boolean>(true);
+  const [faceAnalysisActive, setFaceAnalysisActive] = useState<boolean>(false);
+
   // Add this effect to track emotion history  
   useEffect(() => {
     if (emotions) {
@@ -708,6 +714,11 @@ export function VideoInterviewSimulator({
         emotion,
         frequency: count / history.length
       }));
+  };
+
+  // Handle face analysis metrics updates
+  const handleFaceAnalysis = (metrics: FaceAnalysisMetrics) => {
+    setFaceAnalysisMetrics(metrics);
   };
 
   // Update the speakText function to better handle microphone state
@@ -1477,6 +1488,14 @@ export function VideoInterviewSimulator({
                     borderRadius: '1.5rem'
                   }}
                 />
+                
+                {/* MediaPipe Face Analysis */}
+                <MediaPipeFaceAnalyzer
+                  videoRef={userVideoRef}
+                  onAnalysis={handleFaceAnalysis}
+                  isActive={faceAnalysisActive}
+                />
+                
                 <FacialExpressionAnalyzer 
                   onEmotionDetected={handleEmotionDetected}
                   isActive={isCameraOn && !isFinished} 
@@ -1736,6 +1755,14 @@ export function VideoInterviewSimulator({
   return (
     <div ref={containerRef} style={containerStyles}>
         {renderContent()}
+        
+        {/* Face Analysis Indicators */}
+        <FaceAnalysisIndicators
+          metrics={faceAnalysisMetrics}
+          isVisible={showFaceAnalysis}
+          onToggleVisibility={() => setShowFaceAnalysis(!showFaceAnalysis)}
+        />
+        
       <style>
         {`
           @media (max-width: 768px) {
