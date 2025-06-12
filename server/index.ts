@@ -39,13 +39,18 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Connect to MongoDB
-  try {
-    await connectDB();
-    log("MongoDB connection successful", "mongodb");
-  } catch (error) {
-    log("MongoDB connection failed, using in-memory storage", "mongodb");
-    console.error("MongoDB connection error:", error);
+  // Try MongoDB connection, fall back to in-memory storage
+  const mongoUri = process.env.MONGODB_URI;
+  if (mongoUri && mongoUri.startsWith('mongodb')) {
+    try {
+      await connectDB();
+      log("MongoDB connection successful", "mongodb");
+    } catch (error) {
+      log("MongoDB connection failed, using in-memory storage", "mongodb");
+      console.error("MongoDB connection error:", error);
+    }
+  } else {
+    log("Using in-memory storage", "mongodb");
   }
 
   const server = await registerRoutes(app);
@@ -71,8 +76,8 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
 
-  const port = 3000;
-server.listen(port, () => {
+  const port = 5000;
+server.listen(port, "0.0.0.0", () => {
   log(`serving on port ${port}`);
 });
 

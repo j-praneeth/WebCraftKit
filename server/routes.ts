@@ -159,15 +159,7 @@ function calculateATSScore(content: any, jobDesc: string): number {
 }
 
 export async function registerRoutes(app: Express): Promise<HttpServer> {
-  // Connect to MongoDB
-  try {
-    await connectDB();
-    console.log("Successfully connected to MongoDB");
-  } catch (error) {
-    console.error("Error connecting to MongoDB:", error instanceof Error ? error.message : "An unknown error occurred");
-    // Fall back to in-memory storage
-    console.log("Falling back to in-memory storage");
-  }
+  // Database connection is handled in index.ts - no need to reconnect here
   
   // Serve static files for resume templates
   const staticMiddleware = express.static('public/templates');
