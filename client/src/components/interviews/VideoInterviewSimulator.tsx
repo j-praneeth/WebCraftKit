@@ -470,7 +470,12 @@ export function VideoInterviewSimulator({
       setIsCameraOn(true);
       setFaceDetected(true);
       setIsRecording(true); // Automatically enable microphone
-      setFaceAnalysisActive(true); // Enable face analysis when camera starts
+      
+      // Enable face analysis after a short delay to ensure video is ready
+      setTimeout(() => {
+        setFaceAnalysisActive(true);
+        console.log('Face analysis activated');
+      }, 1000);
       
       toast({
         title: "Camera and microphone connected",
