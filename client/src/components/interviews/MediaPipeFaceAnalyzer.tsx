@@ -42,17 +42,31 @@ export function MediaPipeFaceAnalyzer({
     const loadModels = async () => {
       try {
         console.log('Loading face-api.js models...');
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
-          faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-          faceapi.nets.faceExpressionNet.loadFromUri('/models')
-        ]);
-        console.log('Face-api.js models loaded successfully');
+        
+        // Load models with proper error handling for each
+        const modelLoadPromises = [
+          faceapi.nets.tinyFaceDetector.loadFromUri('/models').catch(e => {
+            console.error('Failed to load TinyFaceDetector:', e);
+            throw e;
+          }),
+          faceapi.nets.faceLandmark68Net.loadFromUri('/models').catch(e => {
+            console.error('Failed to load FaceLandmark68Net:', e);
+            throw e;
+          }),
+          faceapi.nets.faceExpressionNet.loadFromUri('/models').catch(e => {
+            console.error('Failed to load FaceExpressionNet:', e);
+            throw e;
+          })
+        ];
+
+        await Promise.all(modelLoadPromises);
+        console.log('All face-api.js models loaded successfully');
         setIsInitialized(true);
       } catch (error) {
-        console.error('Error loading face-api models:', error);
-        // Provide simulated analysis even without models
-        setIsInitialized(true);
+        console.error('Critical error loading face-api models:', error);
+        console.warn('Face detection will not work without models. Please ensure models are available at /models/');
+        // Don't initialize if models fail to load
+        setIsInitialized(false);
       }
     };
 
@@ -63,7 +77,10 @@ export function MediaPipeFaceAnalyzer({
 
   // Calculate face analysis metrics from face-api.js detection
   const analyzeFaceApiResults = useCallback((detection: any): FaceAnalysisMetrics => {
+    console.log('Processing real-time face detection:', detection);
+    
     if (!detection) {
+      console.warn('No face detection data available');
       return {
         attention: 50,
         positivity: 50,
@@ -78,39 +95,46 @@ export function MediaPipeFaceAnalyzer({
     // Get expressions if available
     const expressions = detection.expressions || {};
     const landmarks = detection.landmarks;
+    
+    console.log('Real-time expressions detected:', expressions);
 
-    // Calculate basic metrics from expressions
-    const happiness = (expressions.happy || 0) * 100;
-    const neutral = (expressions.neutral || 0) * 100;
-    const surprised = (expressions.surprised || 0) * 100;
-    const angry = (expressions.angry || 0) * 100;
-    const fearful = (expressions.fearful || 0) * 100;
-    const disgusted = (expressions.disgusted || 0) * 100;
-    const sad = (expressions.sad || 0) * 100;
+    // Calculate metrics from actual detected expressions with enhanced sensitivity
+    const happiness = Math.round((expressions.happy || 0) * 100);
+    const neutral = Math.round((expressions.neutral || 0) * 100);
+    const surprised = Math.round((expressions.surprised || 0) * 100);
+    const angry = Math.round((expressions.angry || 0) * 100);
+    const fearful = Math.round((expressions.fearful || 0) * 100);
+    const disgusted = Math.round((expressions.disgusted || 0) * 100);
+    const sad = Math.round((expressions.sad || 0) * 100);
 
-    // Calculate attention (high when neutral/focused, low when distracted)
-    const attention = Math.min(100, Math.max(0, 
-      80 + (neutral * 0.3) - (sad * 0.5) - (fearful * 0.3)
+    console.log('Live facial expression analysis:', { happiness, neutral, surprised, angry, fearful, disgusted, sad });
+
+    // Mark as real-time data for debugging
+    const dataSource = 'REAL_TIME_DETECTION';
+
+    // Enhanced attention calculation from real face data
+    const attention = Math.min(100, Math.max(15, 
+      60 + (neutral * 0.4) + (surprised * 0.2) - (sad * 0.4) - (fearful * 0.5)
     ));
 
-    // Calculate positivity (happiness and engagement)
-    const positivity = Math.min(100, Math.max(0,
-      (happiness * 0.8) + (surprised * 0.3) + (neutral * 0.2)
+    // Enhanced positivity from real expressions
+    const positivity = Math.min(100, Math.max(10,
+      25 + (happiness * 0.7) + (surprised * 0.2) + (neutral * 0.1) - (sad * 0.3) - (angry * 0.2)
     ));
 
-    // Calculate confidence (stability and positive expressions)
-    const confidence = Math.min(100, Math.max(0,
-      70 + (happiness * 0.4) + (neutral * 0.3) - (fearful * 0.6) - (sad * 0.4)
+    // Enhanced confidence from real facial stability
+    const confidence = Math.min(100, Math.max(20,
+      45 + (happiness * 0.4) + (neutral * 0.3) - (fearful * 0.5) - (sad * 0.3) - (angry * 0.2)
     ));
 
-    // Calculate arousal (emotional intensity)
-    let arousal = 50; // neutral base
-    if (happiness > 30) {
-      arousal = Math.min(100, 60 + (happiness * 0.6)); // Happy
-    } else if (fearful > 20 || angry > 20 || sad > 30) {
-      arousal = Math.max(0, 40 - (fearful * 0.8) - (angry * 0.6) - (sad * 0.5)); // Uncomfortable
+    // Enhanced arousal calculation from real emotions
+    let arousal = 45; // baseline
+    if (happiness > 20) {
+      arousal = Math.min(100, 55 + (happiness * 0.6));
+    } else if (fearful > 15 || angry > 15 || sad > 25) {
+      arousal = Math.max(15, 35 - (fearful * 0.7) - (angry * 0.5) - (sad * 0.4));
     } else {
-      arousal = 50 + (neutral * 0.1); // Neutral with slight variation
+      arousal = 45 + (neutral * 0.1) + (surprised * 0.2);
     }
 
     // Estimate head pose from face detection box
@@ -131,7 +155,7 @@ export function MediaPipeFaceAnalyzer({
 
     const gazeForward = Math.abs(headPose.yaw) < 15 && Math.abs(headPose.pitch) < 10;
 
-    return {
+    const result = {
       attention: Math.round(attention),
       positivity: Math.round(positivity),
       confidence: Math.round(confidence),
@@ -143,10 +167,13 @@ export function MediaPipeFaceAnalyzer({
       headPose,
       facialFeatures: {
         smile_intensity: Math.round(happiness),
-        eye_openness: Math.round(80 - (sad * 0.5) - (fearful * 0.3)), // Estimate eye openness
+        eye_openness: Math.round(80 - (sad * 0.5) - (fearful * 0.3)),
         eyebrow_position: Math.round(50 + (surprised * 0.4) - (angry * 0.3))
       }
     };
+
+    console.log(`${dataSource} - Final metrics:`, result);
+    return result;
   }, [videoRef]);
 
   // Simulate realistic face analysis metrics
@@ -191,38 +218,52 @@ export function MediaPipeFaceAnalyzer({
 
   // Perform face detection and analysis
   const detectFace = useCallback(async () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || !isInitialized) return;
 
     try {
       const video = videoRef.current;
       
-      // Always generate metrics to keep analysis active
-      const metrics = generateSimulatedMetrics();
-      onAnalysis(metrics);
+      // Ensure video is ready
+      if (video.readyState < 2) {
+        console.log('Video not ready for detection');
+        return;
+      }
 
-      // Try real face detection in background if models are loaded
-      if (isInitialized && canvasRef.current) {
+      if (canvasRef.current) {
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+
         try {
-          const canvas = canvasRef.current;
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
-
           const detections = await faceapi
-            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({
+              inputSize: 416,
+              scoreThreshold: 0.5
+            }))
             .withFaceLandmarks()
             .withFaceExpressions();
           
           if (detections && detections.length > 0) {
+            console.log('Face detected successfully', detections[0]);
             const realMetrics = analyzeFaceApiResults(detections[0]);
             onAnalysis(realMetrics);
+          } else {
+            console.log('No face detected, using fallback metrics');
+            // Only use simulated metrics if no face is detected
+            const metrics = generateSimulatedMetrics();
+            onAnalysis(metrics);
           }
-        } catch (err) {
-          // Continue with simulated metrics if detection fails
+        } catch (detectionError) {
+          console.error('Face detection failed:', detectionError);
+          // Fallback to simulated metrics only on detection error
+          const metrics = generateSimulatedMetrics();
+          onAnalysis(metrics);
         }
       }
 
     } catch (error) {
-      // Always provide metrics to keep analysis running
+      console.error('Face analysis error:', error);
+      // Fallback metrics only on critical error
       const metrics = generateSimulatedMetrics();
       onAnalysis(metrics);
     }

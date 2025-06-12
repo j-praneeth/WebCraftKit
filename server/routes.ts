@@ -167,8 +167,7 @@ export async function registerRoutes(app: Express): Promise<HttpServer> {
 
   // Initialize Gemini API
   if (!process.env.GEMINI_API_KEY) {
-    console.error("Gemini API key is not configured");
-    process.exit(1);
+    console.warn("Gemini API key is not configured - AI features will be limited");
   }
   
   // Register API routes
