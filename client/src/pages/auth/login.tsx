@@ -10,8 +10,7 @@ function Login() {
   const [location, navigate] = useLocation();
   const { login, isLoading } = useAuth();
   const [formData, setFormData] = useState({
-    email:"",
-    // username: "",
+    email: "",
     password: "",
   });
 
@@ -33,116 +32,75 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-[#1C1C25] bg-opacity-98 px-4 relative overflow-hidden">
+      {/* Background gradients */}
+      <div className="absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(138,173,255,0.04),transparent_70%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(138,173,255,0.04),transparent_70%)]" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-10 w-10 text-primary-600"
-              stroke="currentColor"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M20 6H4V18H20V6Z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M4 9H20"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M8 9V18"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <h1 className="ml-2 text-2xl font-bold text-gray-900">ResuNext.ai</h1>
-          </div>
-          <h2 className="mt-2 text-lg font-medium text-gray-900">Sign in to your account</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Elevate your career with AI-powered job tools
+          <h2 className="text-3xl font-bold text-white">Welcome back<span className="text-[#3B82F6]">.</span></h2>
+          <p className="mt-2 text-base text-[#8B8B93]">
+            New to ResuNext? <Link href="/auth/register" className="text-[#3B82F6] hover:text-blue-400 transition-colors duration-200 font-medium">Create an account</Link>
           </p>
         </div>
         
-        <Card>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="pt-6 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  placeholder="Enter your email"
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  <a href="#" className="text-xs text-primary-600 hover:text-primary-500">
-                    Forgot password?
-                  </a>
-                </div>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  placeholder="Enter your password"
-                  required
-                />
-              </div>
-              
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                    Signing in...
-                  </>
-                ) : "Sign in"}
-              </Button>
-            </CardContent>
-          </form>
-          
-          <CardFooter className="flex items-center justify-center border-t p-4">
-            <div className="text-sm text-gray-600">
-              Don't have an account?{" "}
-              <Link href="/auth/register" className="text-primary-600 hover:text-primary-500">
-                Sign up
-              </Link>
+        <div className="bg-[#23232F]/40 backdrop-blur-xl rounded-2xl border border-white/[0.05] shadow-xl">
+          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-[#8B8B93] font-medium text-sm">Email</Label>
+              <Input
+                id="email"
+                name="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                placeholder="Enter your email"
+                required
+                className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
+              />
             </div>
-          </CardFooter>
-        </Card>
-        
-        <div className="mt-8 text-center">
-          <p className="text-xs text-gray-500">
-            By signing in, you agree to our{" "}
-            <a href="#" className="text-primary-600 hover:text-primary-500">
-              Terms of Service
-            </a>{" "}
-            and{" "}
-            <a href="#" className="text-primary-600 hover:text-primary-500">
-              Privacy Policy
-            </a>
-          </p>
+            
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password" className="text-[#8B8B93] font-medium text-sm">Password</Label>
+                <a href="#" className="text-sm text-[#3B82F6] hover:text-blue-400 transition-colors duration-200">
+                  Forgot password?
+                </a>
+              </div>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                placeholder="Enter your password"
+                required
+                className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
+              />
+            </div>
+            
+            <Button
+              type="submit"
+              className="w-full bg-[#3B82F6] hover:bg-blue-600 text-white font-medium h-12 rounded-xl transition-all duration-200"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white mr-2"></div>
+                  Signing in...
+                </>
+              ) : "Sign in"}
+            </Button>
+
+            <p className="text-xs text-[#8B8B93] text-center">
+              By signing in, you agree to our{" "}
+              <a href="#" className="text-[#3B82F6] hover:text-blue-400 transition-colors duration-200">Terms of Service</a>{" "}
+              and{" "}
+              <a href="#" className="text-[#3B82F6] hover:text-blue-400 transition-colors duration-200">Privacy Policy</a>
+            </p>
+          </form>
         </div>
       </div>
     </div>
@@ -150,3 +108,4 @@ function Login() {
 }
 
 export default Login;
+

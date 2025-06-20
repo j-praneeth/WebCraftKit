@@ -11,267 +11,150 @@ function Register() {
   const [location, navigate] = useLocation();
   const { register, isLoading } = useAuth();
   const [formData, setFormData] = useState({
-    username: "",
+    name: "",
     email: "",
     password: "",
     confirmPassword: "",
-    firstName: "",
-    lastName: "",
-    agreeTerms: false
-  });
-  const [formErrors, setFormErrors] = useState({
-    password: "",
-    confirmPassword: "",
-    agreeTerms: ""
   });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
-    // Clear errors when user types
-    if (name in formErrors) {
-      setFormErrors(prev => ({ ...prev, [name]: "" }));
-    }
-  };
-
-  const handleCheckboxChange = (checked: boolean) => {
-    setFormData(prev => ({ ...prev, agreeTerms: checked }));
-    setFormErrors(prev => ({ ...prev, agreeTerms: "" }));
-  };
-
-  const validateForm = () => {
-    const errors = {
-      password: "",
-      confirmPassword: "",
-      agreeTerms: ""
-    };
-    
-    let isValid = true;
-    
-    // Password validation
-    if (formData.password.length < 8) {
-      errors.password = "Password must be at least 8 characters long";
-      isValid = false;
-    }
-    
-    // Confirm password validation
-    if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = "Passwords do not match";
-      isValid = false;
-    }
-    
-    // Terms agreement validation
-    if (!formData.agreeTerms) {
-      errors.agreeTerms = "You must agree to the terms and conditions";
-      isValid = false;
-    }
-    
-    setFormErrors(errors);
-    return isValid;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm()) {
+    if (formData.password !== formData.confirmPassword) {
+      alert("Passwords do not match!");
       return;
     }
-    
+
     try {
       await register({
-        username: formData.username,
+        username: formData.name.toLowerCase().replace(/\s+/g, '_'), // Create username from name
         email: formData.email,
         password: formData.password,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
+        firstName: formData.name.split(' ')[0],
+        lastName: formData.name.split(' ').slice(1).join(' '),
         role: "user",
         plan: "free"
       });
-      
       navigate("/dashboard");
     } catch (error) {
-      // Error is handled by the register function in auth-context
       console.error("Registration failed:", error);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-[#1C1C25] bg-opacity-98 px-4 relative overflow-hidden">
+      {/* Background gradients */}
+      <div className="absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(138,173,255,0.04),transparent_70%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(138,173,255,0.04),transparent_70%)]" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              className="h-10 w-10 text-primary-600"
-              stroke="currentColor"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M20 6H4V18H20V6Z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M4 9H20"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M8 9V18"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            <h1 className="ml-2 text-2xl font-bold text-gray-900">ResuNext.ai</h1>
-          </div>
-          <h2 className="mt-2 text-lg font-medium text-gray-900">Create your account</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Start building your career with AI-powered tools
+          <h2 className="text-3xl font-bold text-white">Create new account<span className="text-[#3B82F6]">.</span></h2>
+          <p className="mt-2 text-base text-[#8B8B93]">
+            Already a member? <Link href="/auth/login" className="text-[#3B82F6] hover:text-blue-400 transition-colors duration-200 font-medium">Log in</Link>
           </p>
         </div>
         
-        <Card>
-          <form onSubmit={handleSubmit}>
-            <CardContent className="pt-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input
-                    id="firstName"
-                    name="firstName"
-                    value={formData.firstName}
-                    onChange={handleInputChange}
-                    placeholder="Enter your first name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input
-                    id="lastName"
-                    name="lastName"
-                    value={formData.lastName}
-                    onChange={handleInputChange}
-                    placeholder="Enter your last name"
-                  />
-                </div>
-              </div>
-              
+        <div className="bg-[#23232F]/40 backdrop-blur-xl rounded-2xl border border-white/[0.05] shadow-xl">
+          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="firstName" className="text-[#8B8B93] font-medium text-sm">First Name</Label>
                 <Input
-                  id="username"
-                  name="username"
-                  value={formData.username}
+                  id="name"
+                  name="name"
+                  value={formData.name}
                   onChange={handleInputChange}
-                  placeholder="Choose a username"
+                  placeholder="Enter first name"
                   required
+                  className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
                 />
               </div>
-              
               <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
+                <Label htmlFor="lastName" className="text-[#8B8B93] font-medium text-sm">Last Name</Label>
                 <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  placeholder="Enter your email"
+                  id="lastName"
+                  name="lastName"
+                  placeholder="Enter last name"
                   required
+                  className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
                 />
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  placeholder="Create a password"
-                  required
-                />
-                {formErrors.password && (
-                  <p className="text-xs text-red-500">{formErrors.password}</p>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
-                <Input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  placeholder="Confirm your password"
-                  required
-                />
-                {formErrors.confirmPassword && (
-                  <p className="text-xs text-red-500">{formErrors.confirmPassword}</p>
-                )}
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="agreeTerms" 
-                  checked={formData.agreeTerms}
-                  onCheckedChange={handleCheckboxChange}
-                />
-                <label
-                  htmlFor="agreeTerms"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  I agree to the{" "}
-                  <a href="#" className="text-primary-600 hover:text-primary-500">
-                    Terms of Service
-                  </a>{" "}
-                  and{" "}
-                  <a href="#" className="text-primary-600 hover:text-primary-500">
-                    Privacy Policy
-                  </a>
-                </label>
-              </div>
-              {formErrors.agreeTerms && (
-                <p className="text-xs text-red-500">{formErrors.agreeTerms}</p>
-              )}
-              
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                    Creating account...
-                  </>
-                ) : "Create Account"}
-              </Button>
-            </CardContent>
-          </form>
-          
-          <CardFooter className="flex items-center justify-center border-t p-4">
-            <div className="text-sm text-gray-600">
-              Already have an account?{" "}
-              <Link href="/auth/login" className="text-primary-600 hover:text-primary-500">
-                Sign in
-              </Link>
             </div>
-          </CardFooter>
-        </Card>
+
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-[#8B8B93] font-medium text-sm">Email</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                placeholder="Enter your email"
+                required
+                className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-[#8B8B93] font-medium text-sm">Password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                placeholder="Create a password"
+                required
+                className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword" className="text-[#8B8B93] font-medium text-sm">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                value={formData.confirmPassword}
+                onChange={handleInputChange}
+                placeholder="Confirm your password"
+                required
+                className="bg-[#15151D]/40 border-[#ffffff0a] text-white placeholder:text-[#8B8B93] focus:border-[#3B82F6] focus:ring-[#3B82F6]/20 h-12 rounded-xl"
+              />
+            </div>
+            
+            <Button
+              type="submit"
+              className="w-full bg-[#3B82F6] hover:bg-blue-600 text-white font-medium h-12 rounded-xl transition-all duration-200"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white mr-2"></div>
+                  Creating account...
+                </>
+              ) : "Create account"}
+            </Button>
+
+            <p className="text-xs text-[#8B8B93] text-center">
+              By creating an account, you agree to our{" "}
+              <a href="#" className="text-[#3B82F6] hover:text-blue-400 transition-colors duration-200">Terms of Service</a>{" "}
+              and{" "}
+              <a href="#" className="text-[#3B82F6] hover:text-blue-400 transition-colors duration-200">Privacy Policy</a>
+            </p>
+          </form>
+        </div>
       </div>
     </div>
   );
 }
-
 export default Register;
+
