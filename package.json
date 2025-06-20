@@ -15,6 +15,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@google/generative-ai": "^0.2.1",
+    "@headlessui/react": "^2.2.4",
     "@hookform/resolvers": "^3.9.1",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
@@ -68,7 +69,7 @@
     "express": "^4.21.2",
     "express-session": "^1.18.1",
     "face-api.js": "^0.22.2",
-    "framer-motion": "^11.13.1",
+    "framer-motion": "^11.18.2",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.2.4",
     "jspdf": "^3.0.1",
@@ -101,7 +102,6 @@
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
-    "react-dom": "^18.2.0",
     "@replit/vite-plugin-cartographer": "^0.0.11",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",
@@ -119,14 +119,15 @@
     "drizzle-kit": "^0.30.4",
     "esbuild": "^0.25.0",
     "postcss": "^8.4.47",
+    "react-dom": "^18.2.0",
     "tailwindcss": "^3.4.14",
     "tsx": "^4.19.1",
     "typescript": "5.6.3",
     "vite": "^5.4.14"
   },
   "optionalDependencies": {
-    "bufferutil": "^4.0.8",
     "@types/react": "^18.2.55",
-    "@types/react-dom": "^18.2.19"
+    "@types/react-dom": "^18.2.19",
+    "bufferutil": "^4.0.8"
   }
 }
